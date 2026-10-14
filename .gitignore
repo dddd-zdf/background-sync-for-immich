@@ -1,0 +1,7 @@
+*.xcodeproj/
+build/
+out/
+DerivedData/
+.DS_Store
+xcuserdata/
+proxy/immich-backup-proxy

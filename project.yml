@@ -1,0 +1,61 @@
+# XcodeGen spec. CI runs `xcodegen generate`; the .xcodeproj is not committed.
+# Bundle IDs below are FIXED: every new ID costs one of the free account's App IDs.
+name: ImmichBackup
+options:
+  bundleIdPrefix: com.difei
+  deploymentTarget:
+    iOS: "27.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Manual
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  ImmichBackup:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Shared
+    dependencies:
+      - target: UploadExtension
+    entitlements:
+      path: App/App.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.difei.immichbackup]
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Immich Backup
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSPhotoLibraryUsageDescription: Immich Backup uploads your photos and videos to your Immich server.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.difei.immichbackup
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+  UploadExtension:
+    type: extensionkit-extension
+    platform: iOS
+    sources:
+      - UploadExtension
+      - Shared
+    entitlements:
+      path: UploadExtension/UploadExtension.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.difei.immichbackup]
+    info:
+      path: UploadExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Immich Backup Upload
+        # Apple requires this for "network access validation"; it is not the upload URL.
+        BackgroundUploadURLBase: https://photos.example.com
+        EXAppExtensionAttributes:
+          EXExtensionPointIdentifier: com.apple.photos.background-upload
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.difei.immichbackup.upload
