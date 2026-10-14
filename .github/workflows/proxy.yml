@@ -1,0 +1,19 @@
+name: Proxy tests
+
+on:
+  push:
+    paths: ["proxy/**", ".github/workflows/proxy.yml"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: proxy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: proxy/go.mod
+      - run: go vet ./... && go test ./...

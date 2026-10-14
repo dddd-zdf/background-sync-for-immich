@@ -31,6 +31,9 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Immich Backup
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIRequiresFullScreen: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSPhotoLibraryUsageDescription: Immich Backup uploads your photos and videos to your Immich server.
@@ -52,6 +55,8 @@ targets:
       path: UploadExtension/Info.plist
       properties:
         CFBundleDisplayName: Immich Backup Upload
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Apple requires this for "network access validation"; it is not the upload URL.
         BackgroundUploadURLBase: https://photos.example.com
         EXAppExtensionAttributes:

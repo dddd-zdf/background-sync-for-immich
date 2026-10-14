@@ -89,13 +89,17 @@ struct ContentView: View {
         let library = PHPhotoLibrary.shared()
         do {
             // Enabling twice throws (PHPhotosErrorDomain 3202), so only call on a real change.
-            if library.uploadJobExtensionEnabled != on { try library.setUploadJobExtensionEnabled(on) }
+            if on && !library.uploadJobExtensionEnabled {
+                try library.enableUploadJobExtension(with: PHAssetResourceUploadJobOptions())
+            } else if !on && library.uploadJobExtensionEnabled {
+                try library.disableUploadJobExtension()
+            }
             extensionError = ""
             SharedLog.write("app", "extension enabled = \(library.uploadJobExtensionEnabled)")
         } catch {
             let ns = error as NSError
             extensionError = "\(ns.domain) \(ns.code): \(ns.localizedDescription)"
-            SharedLog.write("app", "setUploadJobExtensionEnabled(\(on)) failed: \(extensionError) \(ns.userInfo)")
+            SharedLog.write("app", "enable/disable extension (\(on)) failed: \(extensionError) \(ns.userInfo)")
         }
         refresh()
     }

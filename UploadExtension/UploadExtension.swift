@@ -108,7 +108,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             if let jobID {
                 state.inflight[jobID] = asset.localIdentifier
                 created += 1
-                SharedLog.write("ext", "queued \(resource.originalFilename) as job \(jobID)")
+                SharedLog.write("ext", "queued \(resource.filename ?? "?") as job \(jobID)")
             }
         }
         return created
@@ -147,7 +147,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         request.setValue(Settings.apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.setValue(asset.localIdentifier, forHTTPHeaderField: Header.assetID)
-        request.setValue(resource.originalFilename.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "upload",
+        request.setValue((resource.filename ?? "upload").addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "upload",
                          forHTTPHeaderField: Header.filename)
         request.setValue(UTType(resource.uniformTypeIdentifier)?.preferredMIMEType ?? "application/octet-stream",
                          forHTTPHeaderField: "X-Content-Type")

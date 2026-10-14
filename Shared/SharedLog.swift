@@ -18,7 +18,7 @@ enum SharedLog {
             defer { try? handle.close() }
             if let size = try? handle.seekToEnd(), size > maxBytes {
                 trim(url)
-                try? handle.seekToEnd()
+                _ = try? handle.seekToEnd()
             }
             try? handle.write(contentsOf: Data(line.utf8))
         } else {
