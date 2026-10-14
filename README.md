@@ -36,8 +36,13 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
 ## Known risk: SideStore and ExtensionKit
 
 SideStore's signer (SideSign `AppBundle.loadExtensions`) only looks in `PlugIns/`. This
-extension is an ExtensionKit extension, which Xcode puts in `Extensions/`. If the standard IPA
-fails to install or the extension never runs, the fix is to make SideSign scan `Extensions/` too.
+extension is an ExtensionKit extension, which Xcode puts in `Extensions/`, so official SideStore
+installs it unsigned and the install fails. Moving it to `PlugIns/` doesn't work either: iOS then
+demands an `NSExtension` dictionary ("extensionDictionary must be set", tested 2026-10-14).
+
+Fix: SideSign also scans `Extensions/`. Until that is upstream, use the patched SideStore from the
+private repo github.com/dddd-zdf/sidestore-extfix (SideStore develop + `patches/sidesign-extensions.patch`;
+run its workflow, install the IPA from inside SideStore).
 
 ## Proxy
 

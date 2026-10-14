@@ -6,4 +6,6 @@
 - Test upload (newest photo) and automatic backup of photos taken after it's turned on.
 - Go proxy deployed on `home`, Caddy route `/api/assets/background`.
 - CI builds two IPA layouts (`Extensions/` and `PlugIns/`) to test SideStore signing.
-- Who must act: the user installs an IPA with SideStore and creates an Immich API key.
+- Official SideStore can't sign ExtensionKit extensions and the `PlugIns/` workaround fails on iOS;
+  patched SideStore built from private repo dddd-zdf/sidestore-extfix.
+- Who must act: the user installs the patched SideStore, then the standard IPA, and creates an Immich API key.
