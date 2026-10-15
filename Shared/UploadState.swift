@@ -17,6 +17,8 @@ struct UploadState: Codable {
     /// PhotoKit job local identifier -> Photos local identifier.
     var inflight: [String: String] = [:]
     var failed: [String: Failure] = [:]
+    /// Deleted on the iPhone and trashed in Immich by the extension; the app's sync then marks them gone.
+    var trashed: Set<String> = []
     var lastUpload: Date?
     /// Edits are looked for among assets modified after this.
     var editsCheckedUntil: Date?
@@ -47,6 +49,7 @@ struct UploadState: Codable {
         requested = try c.decodeIfPresent(Set<String>.self, forKey: .requested) ?? []
         inflight = try c.decodeIfPresent([String: String].self, forKey: .inflight) ?? [:]
         failed = try c.decodeIfPresent([String: Failure].self, forKey: .failed) ?? [:]
+        trashed = try c.decodeIfPresent(Set<String>.self, forKey: .trashed) ?? []
         lastUpload = try c.decodeIfPresent(Date.self, forKey: .lastUpload)
         editsCheckedUntil = try c.decodeIfPresent(Date.self, forKey: .editsCheckedUntil)
         recent = try c.decodeIfPresent([String].self, forKey: .recent) ?? []

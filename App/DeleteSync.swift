@@ -76,6 +76,10 @@ final class DeleteSync: ObservableObject {
 
         let state = UploadState.load()
         let busy = Set(state.inflight.values)
+        for id in state.trashed { store.markGone(id) }  // already trashed in Immich by the extension
+        for (id, link) in store.links where link.videoID == nil {
+            if let video = byID[link.immichID]?.livePhotoVideoId { store.links[id]?.videoID = video }
+        }
 
         // 1. Deleted on the iPhone -> Immich's trash.
         var missing: [String: SyncStore.Pending] = [:]
@@ -130,7 +134,8 @@ final class DeleteSync: ObservableObject {
             }
             if let match {
                 let fingerprint = await AssetHashing.editFingerprint(of: asset) ?? "unknown"
-                store.links[id] = .init(immichID: match.id, version: .init(modified: checked, fingerprint: fingerprint))
+                store.links[id] = .init(immichID: match.id, version: .init(modified: checked, fingerprint: fingerprint),
+                                        videoID: match.livePhotoVideoId)
                 store.unmatched[id] = nil
                 linked += 1
             } else if !unreadable {

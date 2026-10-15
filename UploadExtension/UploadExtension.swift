@@ -38,6 +38,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
                 SharedLog.write("ext", "retrying \(state.failed.count) failed")
                 state.failed = [:]
             }
+            await trashDeletedOnPhone(&state)
             await findEdits(&state)
             let created = try await createJobs(&state)
             let active = !state.inflight.isEmpty
@@ -107,6 +108,65 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
                 PHAssetResourceUploadJobChangeRequest(for: job)?.acknowledge()
             }
             state.inflight[job.localIdentifier] = nil
+        }
+    }
+
+    // MARK: - Deleted on the iPhone
+
+    /// iOS runs the extension on every photo library change, deletions included, so this is where
+    /// a delete on the iPhone reaches Immich's trash without the app. Over `autoTrashLimit` at once
+    /// is left for the app to ask about (it may be lost Photos access, not deletions).
+    private func trashDeletedOnPhone(_ state: inout UploadState) async {
+        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+              let base = URL(string: Settings.serverURL), !Settings.apiKey.isEmpty else { return }
+        let tracked = Set(state.uploaded.keys).union(sync.links.keys)
+            .subtracting(sync.gone).subtracting(state.trashed)
+            .subtracting(state.inflight.values).subtracting(state.replacing.keys)
+        guard !tracked.isEmpty else { return }
+        let found = PHAsset.fetchAssets(withLocalIdentifiers: Array(tracked), options: nil)
+        guard found.count > 0 else { return }  // nothing visible at all: not trusting that
+        var present = Set<String>()
+        for i in 0..<found.count { present.insert(found.object(at: i).localIdentifier) }
+        let missing = tracked.subtracting(present)
+        guard !missing.isEmpty else { return }
+        guard missing.count <= Self.autoTrashLimit else {
+            SharedLog.write("ext", "\(missing.count) gone from iPhone at once; leaving them for the app to ask")
+            return
+        }
+
+        var trashedNow: Set<String> = []
+        for id in missing {
+            let ids = [state.uploaded[id] ?? sync.links[id]?.immichID, state.liveVideos[id] ?? sync.links[id]?.videoID].compactMap { $0 }
+            switch await trashInImmich(ids, base: base) {
+            case 200..<300, 400:  // trashed, or already gone from Immich: nothing more to do
+                trashedNow.insert(id)
+            case let code:
+                SharedLog.write("ext", "trash in Immich failed for \(id): HTTP \(code); will retry")
+            }
+        }
+        state.trashed.formUnion(trashedNow)
+        if !trashedNow.isEmpty {
+            state.note("trashed \(trashedNow.count) in Immich (deleted on iPhone)")
+            SharedLog.write("ext", "trashed \(trashedNow.count) in Immich, deleted on iPhone")
+        }
+    }
+
+    private static let autoTrashLimit = 25
+
+    /// `DELETE /api/assets` moves to Immich's trash. Returns the HTTP status, 0 if unreachable.
+    private func trashInImmich(_ ids: [String], base: URL) async -> Int {
+        guard !ids.isEmpty else { return 400 }
+        var request = URLRequest(url: base.appendingPathComponent("api/assets"), timeoutInterval: 20)
+        request.httpMethod = "DELETE"
+        request.setValue(Settings.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["ids": ids])
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            return (response as? HTTPURLResponse)?.statusCode ?? 0
+        } catch {
+            SharedLog.write("ext", "trash request failed: \(error.localizedDescription)")
+            return 0
         }
     }
 

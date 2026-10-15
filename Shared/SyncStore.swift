@@ -9,6 +9,8 @@ struct SyncStore: Codable {
         var immichID: String
         /// Edit baseline when linked, so the extension can spot later edits.
         var version: UploadState.Version?
+        /// A Live Photo's video, trashed along with the still (Immich doesn't cascade).
+        var videoID: String?
     }
 
     struct Pending: Codable {

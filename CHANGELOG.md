@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2 (2026-10-15)
+
+- Deleting on the iPhone reaches Immich's trash in the background: the upload extension, which iOS
+  wakes on every photo library change, sends the trash request itself (Live Photo videos too).
+  More than 25 at once still waits for a tap in the app.
+- Links remember a Live Photo's video ID (filled in for existing links on the next sync).
+- Who must act: the user installs the IPA, then deletes a photo without opening the app to test.
+
 ## 0.4.1 (2026-10-15): renamed to Immich Sync
 
 - The app is now called Immich Sync (home screen, titles, Photos permission text); status reads
