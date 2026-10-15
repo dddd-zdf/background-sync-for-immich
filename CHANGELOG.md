@@ -11,7 +11,7 @@
   equals Immich's checksum. Linked library photos also get edit replacement.
 - Runs on app open (at most every 15 min), "Sync now", iOS background refresh, and a Shortcuts
   action "Sync Immich deletions" (for a daily automation). Background runs post a notification
-  when photos trashed in Immich are waiting (at most about once a day, only if the list changed);
+  when photos trashed in Immich are waiting (every 1, 3 or 7 days while photos wait, set by "Remind me to remove", or never; silent when nothing is waiting);
   tapping it shows the delete prompt.
 - Who must act: the user installs the IPA, adds `asset.read` to the Immich API key (search), allows
   notifications, and optionally sets up the Shortcuts automation. Cairn can be uninstalled

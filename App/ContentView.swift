@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var waiting: Int?
     @ObservedObject private var sync = DeleteSync.shared
     @State private var syncMessage = ""
+    @State private var remindEvery = Settings.remindEveryDays
 
     var body: some View {
         NavigationStack {
@@ -62,6 +63,18 @@ struct ContentView: View {
                         .disabled(sync.running)
                         Text("Held back because more than \(DeleteSync.autoTrashLimit) disappeared at once: " + Self.names(sync.store.heldTrash))
                             .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Picker("Remind me to remove", selection: Binding(
+                        get: { remindEvery },
+                        set: { days in
+                            remindEvery = days
+                            Settings.remindEveryDays = days
+                            SharedLog.write("app", "remind every \(days) days")
+                        })) {
+                        Text("Every day").tag(1)
+                        Text("Every 3 days").tag(3)
+                        Text("Weekly").tag(7)
+                        Text("Never").tag(0)
                     }
                     Button("Sync now") { Task { syncMessage = await sync.run(linkBudget: nil); refresh() } }
                         .disabled(sync.running)

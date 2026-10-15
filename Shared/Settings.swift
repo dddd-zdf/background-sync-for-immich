@@ -28,6 +28,12 @@ enum Settings {
         set { d.set(newValue, forKey: "wifiOnly") }
     }
 
+    /// Days between "trashed in Immich" reminders; 0 = never (check in the app).
+    static var remindEveryDays: Int {
+        get { d.object(forKey: "remindEveryDays") as? Int ?? 1 }
+        set { d.set(newValue, forKey: "remindEveryDays") }
+    }
+
     /// One-shot request from the app: forget failures so those assets are tried again.
     /// (The app never writes state.json; the extension owns it.)
     static var retryFailedRequested: Bool {

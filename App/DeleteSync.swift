@@ -25,8 +25,6 @@ final class DeleteSync: ObservableObject {
     @Published var removalRequested = false
 
     static let notificationID = "trashed-in-immich"
-    /// How often at most the "trashed in Immich" notification can come (the author's call; change freely).
-    static let notifyInterval: TimeInterval = 20 * 3600
 
     func reload() {
         if !running { store = SyncStore.load() }
@@ -116,7 +114,7 @@ final class DeleteSync: ObservableObject {
             }
             let id = asset.localIdentifier
             let resources = PHAssetResource.assetResources(for: asset)
-            var candidates = Set(resources.map { Self.nameKey($0.filename) }).flatMap { byName[$0] ?? [] }
+            var candidates = Set(resources.compactMap { $0.filename.map(Self.nameKey) }).flatMap { byName[$0] ?? [] }
             if let created = asset.creationDate.map({ Int($0.timeIntervalSince1970) }) {
                 for second in (created - 2)...(created + 2) { candidates += bySecond[second] ?? [] }
             }
@@ -158,24 +156,24 @@ final class DeleteSync: ObservableObject {
     }
 
     /// For background refresh and the Shortcut: a short sync, then a notification if photos
-    /// trashed in Immich are waiting. At most one per `notifyInterval`, and only when the list changed.
+    /// trashed in Immich are waiting: at most once per `Settings.remindEveryDays` ("Remind me" in
+    /// the app; 0 = never), repeated while they wait. Silent when nothing is waiting.
     func runInBackground() async -> String {
         let summary = await run(linkBudget: 20)
         let pending = store.pendingRemoval
-        let key = pending.keys.sorted().joined(separator: ",")
         let defaults = AppGroup.defaults
         if pending.isEmpty {
-            defaults.removeObject(forKey: "notifiedPending")
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.notificationID])
-        } else if defaults.string(forKey: "notifiedPending") != key,
-                  (defaults.object(forKey: "notifiedAt") as? Date ?? .distantPast) < Date().addingTimeInterval(-Self.notifyInterval) {
+        } else if Settings.remindEveryDays > 0,
+                  // A few hours' slack so a daily reminder doesn't slip a day when iOS runs it a bit early.
+                  (defaults.object(forKey: "notifiedAt") as? Date ?? .distantPast)
+                    < Date().addingTimeInterval(Double(Settings.remindEveryDays) * -86400 + 4 * 3600) {
             let content = UNMutableNotificationContent()
             content.title = "\(pending.count) photo\(pending.count == 1 ? "" : "s") trashed in Immich"
             content.body = "Tap to remove \(pending.count == 1 ? "it" : "them") from this iPhone."
             let request = UNNotificationRequest(identifier: Self.notificationID, content: content, trigger: nil)
             do {
                 try await UNUserNotificationCenter.current().add(request)
-                defaults.set(key, forKey: "notifiedPending")
                 defaults.set(Date(), forKey: "notifiedAt")
             } catch {
                 SharedLog.write("sync", "notification failed: \(error)")
