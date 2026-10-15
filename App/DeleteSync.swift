@@ -49,6 +49,7 @@ final class DeleteSync: ObservableObject {
         store.save()
         self.store = store
         await updateAskNotification()
+        await stageAlbum()
         SharedLog.write("sync", result)
         return result
     }
@@ -164,9 +165,7 @@ final class DeleteSync: ObservableObject {
 
     /// For the Shortcut: a short sync (`run` also plans the notification).
     func runInBackground() async -> String {
-        let summary = await run(linkBudget: 20)
-        await stageAlbum()
-        return summary
+        await run(linkBudget: 20)  // `run` also updates the album
     }
 
     static let albumTitle = "Trashed in Immich"
@@ -180,7 +179,7 @@ final class DeleteSync: ObservableObject {
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "title == %@", Self.albumTitle)
         var album = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .albumRegular, options: options).firstObject
-        if album == nil && wanted.isEmpty { return }
+        // Created even when empty, so Shortcuts' Find Photos can offer it as a filter.
         do {
             if album == nil {
                 var placeholder: String?

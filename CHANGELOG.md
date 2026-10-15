@@ -1,12 +1,14 @@
 # Changelog
 
-## 0.5.0 (2026-10-15): fully automatic with a Shortcut
+## 0.5.1 (2026-10-15): fully automatic with a Shortcut
 
 - The "Sync Immich deletions" action also fills a Photos album "Trashed in Immich" with exactly the
   photos trashed in Immich that are still on the iPhone (restored ones drop out). A Shortcut can then
   delete them with no tap: Sync Immich deletions > Find Photos (Album is Trashed in Immich) > Delete
   Photos, with Settings > Apps > Shortcuts > Advanced > Allow Deleting Without Confirmation on.
   They still go to Recently Deleted. Anything added to the album by hand is deleted too.
+- The album is created on every sync, even empty, so Find Photos can offer it as a filter (before,
+  it only appeared once something was waiting). Every sync, not only the Shortcut, keeps it current.
 - Suggested triggers: Photos app Is Closed (iPhone deletes reach Immich right away) and a daily time.
 - Who must act: the user installs the IPA and builds the Shortcut automation.
 
