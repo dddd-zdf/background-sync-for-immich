@@ -1,6 +1,7 @@
 import AppIntents
 
-/// Shortcuts action for running the delete sync on a schedule (Shortcuts > Automation, e.g. daily
+/// Shortcuts action for running the delete sync on a schedule, the only way to run it without
+/// opening the app (iOS doesn't wake the extension for deletions) (Shortcuts > Automation, e.g. daily
 /// or when charging, set to Run Immediately). Runs in the background; if photos trashed in Immich
 /// are waiting, it posts a notification, and tapping it shows iOS's delete prompt.
 struct SyncDeletionsIntent: AppIntent {

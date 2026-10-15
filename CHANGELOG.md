@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.4 (2026-10-15)
+
+- Found on the phone: iOS doesn't wake the upload extension for deletions, only for new photos.
+  So a delete on the iPhone reaches Immich's trash at the next new photo, the next Shortcut run, or
+  when the app opens. A daily "Sync Immich deletions" automation covers both directions.
+- Removed iOS background refresh: it failed under SideStore signing ("Unrecognized Identifier")
+  and never runs for swiped-away apps.
+- Who must act: the user installs the IPA and sets up the daily Shortcuts automation.
+
 ## 0.4.3 (2026-10-15)
 
 - Fix: background trash of iPhone deletions found nothing, likely because fetching photos by ID

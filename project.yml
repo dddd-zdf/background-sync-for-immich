@@ -10,7 +10,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.4.3"
+    MARKETING_VERSION: "0.4.4"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Manual
@@ -38,8 +38,6 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSPhotoLibraryUsageDescription: Immich Sync keeps your photos in sync with your Immich server, uploading new ones and syncing deletions.
-        UIBackgroundModes: [fetch]
-        BGTaskSchedulerPermittedIdentifiers: [com.difei.immichbackup.sync]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.difei.immichbackup

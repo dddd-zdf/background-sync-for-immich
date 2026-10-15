@@ -3,7 +3,8 @@ import Photos
 import UserNotifications
 
 /// Two-way delete sync between the iPhone library and Immich. Runs in the app (on open, the Sync
-/// button, background refresh, or the Shortcuts action), never in the extension. Deleting photos
+/// button, or the Shortcuts action). The extension also trashes iPhone deletions when iOS wakes it
+/// for new photos (`trashDeletedOnPhone`). Deleting photos
 /// needs iOS's confirmation prompt, which only the app in the foreground can show, so a background
 /// run that finds photos trashed in Immich plans a notification; tapping it shows the prompt.
 ///
@@ -161,7 +162,7 @@ final class DeleteSync: ObservableObject {
         return parts.isEmpty ? "In sync." : parts.joined(separator: "; ").capitalizedFirst + "."
     }
 
-    /// For background refresh and the Shortcut: a short sync (`run` also plans the notification).
+    /// For the Shortcut: a short sync (`run` also plans the notification).
     func runInBackground() async -> String {
         await run(linkBudget: 20)
     }
