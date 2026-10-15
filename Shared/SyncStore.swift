@@ -18,6 +18,8 @@ struct SyncStore: Codable {
         var file: String
         /// A Live Photo's video: Immich doesn't trash it along with the still.
         var videoID: String?
+        /// An edited photo's original (and its video), stacked under the edit.
+        var originalIDs: [String]?
     }
 
     var links: [String: Link] = [:]

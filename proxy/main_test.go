@@ -148,3 +148,80 @@ func TestReplace(t *testing.T) {
 		}
 	}
 }
+
+// TestStackEdit: an edited render goes on top of a stack with the original under it.
+func TestStackEdit(t *testing.T) {
+	var calls []string
+	uploadID := "new"
+	immich := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-api-key") != "key123" {
+			t.Errorf("api key missing on %s %s", r.Method, r.URL.Path)
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/assets":
+			w.WriteHeader(201)
+			io.WriteString(w, `{"id":"`+uploadID+`","status":"created"}`)
+		case "GET /api/stacks":
+			calls = append(calls, "GET stacks "+r.URL.Query().Get("primaryAssetId"))
+			io.WriteString(w, `[{"id":"s1","primaryAssetId":"old"}]`)
+		case "DELETE /api/stacks/s1":
+			calls = append(calls, "DELETE stack s1")
+			w.WriteHeader(204)
+		case "PUT /api/assets/copy", "DELETE /api/assets", "POST /api/stacks":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			b, _ := json.Marshal(body)
+			calls = append(calls, r.Method+" "+r.URL.Path+" "+string(b))
+			w.WriteHeader(200)
+			io.WriteString(w, `{}`)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer immich.Close()
+	proxy := httptest.NewServer(uploadHandler(immich.URL, http.DefaultClient))
+	defer proxy.Close()
+
+	cases := []struct {
+		name, uploadID, old string
+		want                []string
+	}{
+		{"later edit: previous render trashed", "new", "old", []string{
+			`PUT /api/assets/copy {"favorite":false,"sourceId":"old","stack":false,"targetId":"new"}`,
+			"GET stacks old",
+			"DELETE stack s1",
+			`POST /api/stacks {"assetIds":["new","orig"]}`,
+			`DELETE /api/assets {"ids":["old"]}`,
+		}},
+		{"first edit: original was shown, kept", "new", "orig", []string{
+			`PUT /api/assets/copy {"favorite":false,"sourceId":"orig","stack":false,"targetId":"new"}`,
+			`POST /api/stacks {"assetIds":["new","orig"]}`,
+		}},
+		{"edited before upload", "new", "", []string{
+			`POST /api/stacks {"assetIds":["new","orig"]}`,
+		}},
+		{"render already in Immich", "old", "old", []string{
+			`POST /api/stacks {"assetIds":["old","orig"]}`,
+		}},
+	}
+	for _, c := range cases {
+		calls = nil
+		uploadID = c.uploadID
+		req, _ := http.NewRequest(http.MethodPost, proxy.URL, strings.NewReader("PHOTO-BYTES"))
+		req.Header.Set("x-api-key", "key123")
+		req.Header.Set("X-Stack-Original-Id", "orig")
+		if c.old != "" {
+			req.Header.Set("X-Replace-Asset-Id", c.old)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(calls, "|") != strings.Join(c.want, "|") {
+			t.Errorf("%s: calls\n%v\nwant\n%v", c.name, calls, c.want)
+		}
+		if got := resp.Header.Get(hStacked); got != "ok" {
+			t.Errorf("%s: %s = %q", c.name, hStacked, got)
+		}
+	}
+}

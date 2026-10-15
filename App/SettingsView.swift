@@ -176,6 +176,15 @@ struct DiagnosticsView: View {
                 if Settings.testUploadRequested {
                     Text("Waiting for the extension to run").font(.footnote).foregroundStyle(.secondary)
                 }
+                Button("Keep originals of edited photos") {
+                    Settings.keepOriginalsRequested = true
+                    SharedLog.write("app", "keep originals requested")
+                    model.wakeExtension()
+                }
+                .disabled(!model.extensionEnabled)
+                if Settings.keepOriginalsRequested {
+                    Text("Waiting for the extension to run").font(.footnote).foregroundStyle(.secondary)
+                }
             }
             Section("Recent") {
                 ForEach(model.snapshot.state.recent.prefix(15), id: \.self) {

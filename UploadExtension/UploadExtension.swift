@@ -38,6 +38,10 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
                 SharedLog.write("ext", "retrying \(state.failed.count) failed")
                 state.failed = [:]
             }
+            if Settings.keepOriginalsRequested {
+                Settings.keepOriginalsRequested = false
+                keepOriginalsOfEditedPhotos(&state)
+            }
             await trashDeletedOnPhone(&state)
             await findEdits(&state)
             let created = try await createJobs(&state)
@@ -75,14 +79,21 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             let immichID = headers["x-immich-asset-id"] ?? ""
             let status = headers["x-immich-status"] ?? "-"
             let result = headers["x-immich-result"] ?? ""
-            let replaced = headers["x-immich-replaced"].map { " replaced: \($0)" } ?? ""
+            let replaced = (headers["x-immich-replaced"].map { " replaced: \($0)" } ?? "")
+                + (headers["x-immich-stacked"].map { " stacked: \($0)" } ?? "")
 
             if !immichID.isEmpty {
                 switch part {
+                case .originalVideo:
+                    state.originalVideos[assetID] = immichID
+                case .original:
+                    state.originals[assetID] = immichID
                 case .video:
                     state.liveVideos[assetID] = immichID
                 case .main:
                     state.uploaded[assetID] = immichID
+                    // Set when the render reused the original's video instead of uploading one.
+                    if let video = sent.value(forHTTPHeaderField: "X-Live-Photo-Video-Id") { state.liveVideos[assetID] = video }
                     state.replacing[assetID] = nil
                     state.requested.remove(assetID)
                     if let modified = sent.value(forHTTPHeaderField: Header.modified).flatMap(Double.init),
@@ -141,8 +152,9 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
 
         var trashedNow: Set<String> = []
         for id in missing {
-            let ids = [state.uploaded[id] ?? sync.links[id]?.immichID, state.liveVideos[id] ?? sync.links[id]?.videoID].compactMap { $0 }
-            switch await trashInImmich(ids, base: base) {
+            let ids = [state.uploaded[id] ?? sync.links[id]?.immichID, state.liveVideos[id] ?? sync.links[id]?.videoID,
+                       state.originals[id], state.originalVideos[id]].compactMap { $0 }
+            switch await trashInImmich(Array(Set(ids)), base: base) {
             case 200..<300, 400:  // trashed, or already gone from Immich: nothing more to do
                 trashedNow.insert(id)
             case let code:
@@ -161,17 +173,28 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     /// `DELETE /api/assets` moves to Immich's trash. Returns the HTTP status, 0 if unreachable.
     private func trashInImmich(_ ids: [String], base: URL) async -> Int {
         guard !ids.isEmpty else { return 400 }
-        var request = URLRequest(url: base.appendingPathComponent("api/assets"), timeoutInterval: 20)
-        request.httpMethod = "DELETE"
+        return await immich("DELETE", "api/assets", body: ["ids": ids], base: base).status
+    }
+
+    /// One Immich API call. Status 0 if unreachable.
+    private func immich(_ method: String, _ path: String, query: [URLQueryItem] = [], body: [String: Any]? = nil,
+                        base: URL) async -> (status: Int, data: Data) {
+        var components = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        if !query.isEmpty { components?.queryItems = query }
+        guard let url = components?.url else { return (0, Data()) }
+        var request = URLRequest(url: url, timeoutInterval: 20)
+        request.httpMethod = method
         request.setValue(Settings.apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["ids": ids])
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            return (response as? HTTPURLResponse)?.statusCode ?? 0
+            let (data, response) = try await URLSession.shared.data(for: request)
+            return ((response as? HTTPURLResponse)?.statusCode ?? 0, data)
         } catch {
-            SharedLog.write("ext", "trash request failed: \(error.localizedDescription)")
-            return 0
+            SharedLog.write("ext", "\(method) \(path) failed: \(error.localizedDescription)")
+            return (0, Data())
         }
     }
 
@@ -213,6 +236,23 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
                 state.versions[id] = .init(modified: modified, fingerprint: fingerprint)
                 continue
             }
+            if fingerprint == "original", let original = state.originals[id] {
+                // Reverted in Photos: the original is already in Immich, under the edit.
+                guard await revert(render: current, original: original) else { complete = false; continue }
+                state.uploaded[id] = original
+                state.liveVideos[id] = state.originalVideos[id]
+                state.originals[id] = nil
+                state.originalVideos[id] = nil
+                state.versions[id] = .init(modified: modified, fingerprint: fingerprint)
+                state.note("reverted \(id): original \(original) shown again, \(current) trashed")
+                SharedLog.write("ext", "revert: \(id) back to original \(original)")
+                continue
+            }
+            if fingerprint != "original", state.originals[id] == nil, known.fingerprint == "original" {
+                // First edit of a photo that reached Immich unedited: Immich already has the original.
+                state.originals[id] = current
+                state.originalVideos[id] = state.liveVideos[id] ?? sync.links[id]?.videoID
+            }
             state.replacing[id] = current
             state.uploaded[id] = nil
             state.liveVideos[id] = nil
@@ -221,6 +261,51 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             SharedLog.write("ext", "edit found: \(id)")
         }
         if complete { state.editsCheckedUntil = scanStart }
+    }
+
+    /// Puts the original back on top after Revert in Photos: removes the render's stack, copies its
+    /// albums, shared links and favorite to the original, then trashes the render. False to try again next run.
+    private func revert(render: String, original: String) async -> Bool {
+        guard render != original else { return true }
+        guard let base = URL(string: Settings.serverURL), !Settings.apiKey.isEmpty else { return false }
+        func ok(_ status: Int, _ step: String) -> Bool {
+            if (200..<300).contains(status) { return true }
+            SharedLog.write("ext", "revert \(render): \(step) HTTP \(status)")
+            return false
+        }
+        let found = await immich("GET", "api/stacks", query: [URLQueryItem(name: "primaryAssetId", value: render)], base: base)
+        guard ok(found.status, "stack lookup") else { return false }
+        let stacks = (try? JSONSerialization.jsonObject(with: found.data)) as? [[String: Any]] ?? []
+        for case let stack? in stacks.map({ $0["id"] as? String }) {
+            guard ok(await immich("DELETE", "api/stacks/\(stack)", base: base).status, "unstack") else { return false }
+        }
+        let copied = await immich("PUT", "api/assets/copy",
+                                  body: ["sourceId": render, "targetId": original, "stack": false, "favorite": true], base: base)
+        guard copied.status == 400 || ok(copied.status, "copy") else { return false }  // 400: render already gone
+        let trashed = await trashInImmich([render], base: base)
+        return trashed == 400 || ok(trashed, "trash")
+    }
+
+    /// For photos edited before originals were kept: queue each one like a new edit, so its original
+    /// uploads (Immich matches it if already there) and its render goes on top of a stack.
+    private func keepOriginalsOfEditedPhotos(_ state: inout UploadState) {
+        let tracked = Set(state.uploaded.keys).union(sync.links.keys)
+            .subtracting(sync.gone).subtracting(state.trashed).subtracting(state.inflight.values)
+            .filter { state.originals[$0] == nil && state.replacing[$0] == nil }
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: Array(tracked), options: nil)
+        var queued = 0
+        for i in 0..<assets.count {
+            let asset = assets.object(at: i)
+            let id = asset.localIdentifier
+            guard Self.render(of: asset, PHAssetResource.assetResources(for: asset)) != nil,
+                  let current = sync.immichID(for: id, state) else { continue }
+            state.replacing[id] = current
+            state.uploaded[id] = nil
+            state.failed[id] = nil
+            queued += 1
+        }
+        state.note("keeping originals: \(queued) edited photos queued")
+        SharedLog.write("ext", "keep originals: \(queued) edited photos queued")
     }
 
     // MARK: - New jobs
@@ -320,20 +405,34 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         return PHAsset.fetchAssets(with: options)
     }
 
-    /// The next file to send for this asset: a Live Photo's video until it has an Immich ID,
-    /// then the version you see in Photos (the edited render if there is one, else the original).
+    /// The next file to send for this asset, one per job, in this order:
+    /// - edited and its original not in Immich yet: the original (a Live Photo's original video first),
+    /// - a Live Photo's video until it has an Immich ID (an edit that left the video alone reuses
+    ///   the original's),
+    /// - then the version you see in Photos (the edited render if there is one, else the original).
+    ///   An edit's render is stacked on top of the original by the proxy.
     private func nextUpload(of asset: PHAsset, _ state: UploadState) -> (PHAssetResource, Part)? {
+        let id = asset.localIdentifier
         let resources = PHAssetResource.assetResources(for: asset)
-        func first(_ types: [PHAssetResourceType]) -> PHAssetResource? {
-            types.lazy.compactMap { type in resources.first { $0.type == type } }.first
+        func first(_ type: PHAssetResourceType) -> PHAssetResource? { resources.first { $0.type == type } }
+        let live = asset.mediaType == .image && asset.mediaSubtypes.contains(.photoLive)
+        let original = first(asset.mediaType == .video ? .video : .photo)
+        let render = Self.render(of: asset, resources)
+        if render != nil, state.originals[id] == nil, let original {
+            if live, state.originalVideos[id] == nil, let video = first(.pairedVideo) { return (video, .originalVideo) }
+            return (original, .original)
         }
-        if asset.mediaType == .image, asset.mediaSubtypes.contains(.photoLive),
-           state.liveVideos[asset.localIdentifier] == nil,
-           let video = first([.fullSizePairedVideo, .pairedVideo]) {
-            return (video, .video)
+        if live, state.liveVideos[id] == nil {
+            if let video = first(.fullSizePairedVideo) { return (video, .video) }
+            if render == nil || state.originalVideos[id] == nil, let video = first(.pairedVideo) { return (video, .video) }
         }
-        let main = asset.mediaType == .video ? first([.fullSizeVideo, .video]) : first([.fullSizePhoto, .photo])
-        return main.map { ($0, .main) }
+        return (render ?? original).map { ($0, .main) }
+    }
+
+    /// The edited render, if the asset has been edited in Photos.
+    static func render(of asset: PHAsset, _ resources: [PHAssetResource]) -> PHAssetResource? {
+        let type: PHAssetResourceType = asset.mediaType == .video ? .fullSizeVideo : .fullSizePhoto
+        return resources.first { $0.type == type }
     }
 
     private func destination(url: URL, asset: PHAsset, resource: PHAssetResource, part: Part, state: UploadState) async -> URLRequest {
@@ -356,15 +455,26 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         request.setValue(iso.string(from: created), forHTTPHeaderField: "X-File-Created-At")
         request.setValue(iso.string(from: modified), forHTTPHeaderField: "X-File-Modified-At")
         switch part {
-        case .video:
+        case .video, .originalVideo:
             request.setValue("false", forHTTPHeaderField: "X-Is-Favorite")
+        case .original:
+            // Under the edit in a stack; the favorite goes on the edit.
+            request.setValue("false", forHTTPHeaderField: "X-Is-Favorite")
+            if asset.mediaType == .video {
+                request.setValue(String(Int(asset.duration * 1000)), forHTTPHeaderField: "X-Duration-Ms")
+            }
+            request.setValue(state.originalVideos[id], forHTTPHeaderField: "X-Live-Photo-Video-Id")
         case .main:
             request.setValue(asset.isFavorite ? "true" : "false", forHTTPHeaderField: "X-Is-Favorite")
             if asset.mediaType == .video {
                 request.setValue(String(Int(asset.duration * 1000)), forHTTPHeaderField: "X-Duration-Ms")
             }
-            request.setValue(state.liveVideos[id], forHTTPHeaderField: "X-Live-Photo-Video-Id")
+            let edited = Self.render(of: asset, PHAssetResource.assetResources(for: asset)) != nil
+            let video = state.liveVideos[id] ?? (edited ? state.originalVideos[id] : nil)
+            request.setValue(video, forHTTPHeaderField: "X-Live-Photo-Video-Id")
             request.setValue(state.replacing[id], forHTTPHeaderField: Header.replace)
+            // The proxy stacks the render on top of the original.
+            if edited { request.setValue(state.originals[id], forHTTPHeaderField: Header.stackOriginal) }
             // Read back on acknowledge to record which version was uploaded (edit detection).
             request.setValue(String(modified.timeIntervalSince1970), forHTTPHeaderField: Header.modified)
             request.setValue(await AssetHashing.editFingerprint(of: asset) ?? "unknown", forHTTPHeaderField: Header.fingerprint)
@@ -385,6 +495,8 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
 
 enum Part: String {
     case main, video
+    /// An edited photo's untouched original (and a Live Photo's original video), sent before the edit.
+    case original, originalVideo
 }
 
 enum Header {
@@ -392,6 +504,7 @@ enum Header {
     static let part = "X-Upload-Part"
     static let filename = "X-Filename"
     static let replace = "X-Replace-Asset-Id"
+    static let stackOriginal = "X-Stack-Original-Id"
     static let modified = "X-Asset-Modified"
     static let fingerprint = "X-Edit-Fingerprint"
 }

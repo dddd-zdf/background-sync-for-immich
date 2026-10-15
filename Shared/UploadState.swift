@@ -8,6 +8,11 @@ struct UploadState: Codable {
     var uploaded: [String: String] = [:]
     /// Photos ID -> Immich asset ID of a Live Photo's video part.
     var liveVideos: [String: String] = [:]
+    /// Edited photos: Photos ID -> Immich ID of the untouched original, stacked under the render
+    /// (`uploaded`). Revert in Photos brings it back on top.
+    var originals: [String: String] = [:]
+    /// Edited Live Photos: Photos ID -> Immich ID of the original's video.
+    var originalVideos: [String: String] = [:]
     /// Photos ID -> version that was uploaded (modification date and edit fingerprint).
     var versions: [String: Version] = [:]
     /// Edited after upload: Photos ID -> Immich ID the new upload replaces (moved to Immich's trash).
@@ -44,6 +49,8 @@ struct UploadState: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         uploaded = try c.decodeIfPresent([String: String].self, forKey: .uploaded) ?? [:]
         liveVideos = try c.decodeIfPresent([String: String].self, forKey: .liveVideos) ?? [:]
+        originals = try c.decodeIfPresent([String: String].self, forKey: .originals) ?? [:]
+        originalVideos = try c.decodeIfPresent([String: String].self, forKey: .originalVideos) ?? [:]
         versions = try c.decodeIfPresent([String: Version].self, forKey: .versions) ?? [:]
         replacing = try c.decodeIfPresent([String: String].self, forKey: .replacing) ?? [:]
         requested = try c.decodeIfPresent(Set<String>.self, forKey: .requested) ?? []

@@ -64,6 +64,13 @@ enum Settings {
         set { d.set(newValue, forKey: "testUploadRequested") }
     }
 
+    /// One-shot request from the app: give photos edited before 0.6.0 their original in Immich
+    /// (stacked under the edit), like new edits get.
+    static var keepOriginalsRequested: Bool {
+        get { d.bool(forKey: "keepOriginalsRequested") }
+        set { d.set(newValue, forKey: "keepOriginalsRequested") }
+    }
+
     static var lastInvocation: Date? {
         get { d.object(forKey: "lastInvocation") as? Date }
         set { d.set(newValue, forKey: "lastInvocation") }

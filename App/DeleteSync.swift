@@ -95,7 +95,8 @@ final class DeleteSync: ObservableObject {
                 store.markGone(id)  // already trashed in Immich, or not visible to us: nothing to do
                 continue
             }
-            missing[id] = .init(immichID: immichID, file: asset.originalFileName, videoID: asset.livePhotoVideoId)
+            missing[id] = .init(immichID: immichID, file: asset.originalFileName, videoID: asset.livePhotoVideoId,
+                                originalIDs: Self.originalIDs(id, state))
         }
         var trashed = 0
         if missing.count > Self.autoTrashLimit {
@@ -153,7 +154,8 @@ final class DeleteSync: ObservableObject {
         var pending: [String: SyncStore.Pending] = [:]
         for id in phone.keys where state.replacing[id] == nil && !busy.contains(id) {
             guard let immichID = store.immichID(for: id, state), let asset = byID[immichID], asset.isTrashed else { continue }
-            pending[id] = .init(immichID: immichID, file: asset.originalFileName, videoID: asset.livePhotoVideoId)
+            pending[id] = .init(immichID: immichID, file: asset.originalFileName, videoID: asset.livePhotoVideoId,
+                                originalIDs: Self.originalIDs(id, state))
         }
         store.pendingRemoval = pending
 
@@ -286,6 +288,9 @@ final class DeleteSync: ObservableObject {
             SharedLog.write("sync", result)
             return result
         }
+        // An edit's original stays in Immich unless it was trashed with the edit there.
+        let originals = ids.flatMap { store.pendingRemoval[$0]?.originalIDs ?? [] }
+        if !originals.isEmpty { try? await Immich.trash(originals) }
         for id in ids { store.markGone(id) }
         store.save()
         self.store = store
@@ -317,10 +322,16 @@ final class DeleteSync: ObservableObject {
 
     private func trash(_ items: [String: SyncStore.Pending], _ store: inout SyncStore) async throws {
         guard !items.isEmpty else { return }
-        let ids = items.values.flatMap { [$0.immichID] + ($0.videoID.map { [$0] } ?? []) }
-        try await Immich.trash(ids)
+        let ids = items.values.flatMap { [$0.immichID] + ($0.videoID.map { [$0] } ?? []) + ($0.originalIDs ?? []) }
+        try await Immich.trash(Array(Set(ids)))
         for id in items.keys { store.markGone(id) }
         SharedLog.write("sync", "trashed in Immich: " + items.values.map(\.file).joined(separator: ", "))
+    }
+
+    /// An edited photo's original and its video in Immich, if kept.
+    private static func originalIDs(_ id: String, _ state: UploadState) -> [String]? {
+        let ids = [state.originals[id], state.originalVideos[id]].compactMap { $0 }
+        return ids.isEmpty ? nil : ids
     }
 
     /// Name without extension, lowercased: IMG_1234.HEIC and IMG_1234.jpg are candidates for each other.

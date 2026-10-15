@@ -32,7 +32,8 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
 2. Install it with the patched SideStore (below); official SideStore can't sign the extension.
    Updating over an existing install keeps settings and upload state.
 3. In the app: server URL and API key (Immich: Account settings > API keys, permissions
-   `asset.upload`, `asset.read`, `asset.copy`, `asset.delete`, `user.read`),
+   `asset.upload`, `asset.read`, `asset.copy`, `asset.delete`, `user.read`, `stack.create`, `stack.read`,
+   `stack.delete`),
    full Photos access, turn on the extension, then "Upload new photos". Anything on the iPhone that
    isn't in Immich uploads: new photos right away, older ones once the library check finds them missing.
 
@@ -51,12 +52,23 @@ trash on the next sync, Live Photo videos included.
   ones since upload was turned on, then older ones the library check marked as not in Immich. A file that fails 3 times waits for "Retry all".
 - Live Photos: two jobs in sequence. The video goes first; once its job is acknowledged with an
   Immich ID, the still goes with `X-Live-Photo-Video-Id`, which Immich uses to pair them.
-- Edits: when an uploaded asset's modification date moves, the extension compares a hash of its
-  adjustment data with the one recorded at upload. If it changed, the new render uploads with
-  `X-Replace-Asset-Id`; the proxy copies albums/shared links/stack to the new asset and trashes the old.
+- Edits (0.6.0): an edited photo is one stack in Immich, the edit on top and the untouched original
+  under it, like Photos. The original goes first (Live Photos: its video, then the still), then the
+  render with `X-Stack-Original-Id`. Edit detection: when an asset's modification date moves, the
+  extension compares a hash of its adjustment data with the one recorded at upload.
+  - First edit of a photo that reached Immich unedited: what Immich has is the original; only the
+    render uploads, and gets the original's albums.
+  - Later edits: the new render goes on top (`X-Replace-Asset-Id` = the previous render: its albums,
+    shared links and sidecar move over, its stack is removed, it is trashed). The original stays.
+  - Revert in Photos: no upload. The extension removes the stack, copies the render's albums and
+    favorite to the original and trashes the render.
+  - Photos edited before 0.6.0 (or before the photo first uploaded under 0.5.x) are a single render
+    in Immich until Advanced > "Keep originals of edited photos" queues them like a new edit.
+    Immich matches anything it already has by checksum, so only what's missing is stored.
+  - Anything with a full-size render counts as edited, including Portrait photos straight from the camera.
 - `state.json` in the app group (written only by the extension; the app asks for changes through
   settings flags): `uploaded` (Photos ID -> Immich ID, for later two-way sync), `liveVideos`,
-  `versions`, `replacing`, `inflight`, `failed`.
+  `versions`, `replacing`, `originals` and `originalVideos` (edited photos), `inflight`, `failed`.
 
 ## Two-way delete sync
 
@@ -116,10 +128,12 @@ Caddy routes `photos.example.com/api/assets/background` to it. See infra `vms/ho
 - Request headers: `x-api-key`, `X-Filename` (percent-encoded), `X-Content-Type`,
   `X-File-Created-At`, `X-File-Modified-At`, `X-Is-Favorite`, `X-Duration-Ms`, `X-Live-Photo-Video-Id`,
   `X-Replace-Asset-Id` (after a successful upload with a different ID: `PUT /api/assets/copy`, then
-  `DELETE /api/assets` to trash the old one). Others (`X-Asset-Id`, `X-Upload-Part`, ...) are only
+  `DELETE /api/assets` to trash the old one), `X-Stack-Original-Id` (stack the upload on top of that
+  original; with it, `X-Replace-Asset-Id` is what stood for the photo before, trashed unless it is
+  the original). Others (`X-Asset-Id`, `X-Upload-Part`, ...) are only
   for the extension, which reads them back from the finished job.
 - Response headers (PhotoKit keeps only headers): `X-Immich-Asset-Id`, `X-Immich-Status`,
-  `X-Immich-Result` (created/duplicate), `X-Immich-Error`, `X-Immich-Replaced` (ok or what failed).
+  `X-Immich-Result` (created/duplicate), `X-Immich-Error`, `X-Immich-Replaced` and `X-Immich-Stacked` (ok or what failed).
 
 Deploy: copy `proxy/` to `/opt/immich-backup-proxy`, then
 `sudo docker build -t immich-backup-proxy:latest . && sudo docker rm -f immich-backup-proxy && sudo docker run -d --name immich-backup-proxy --restart unless-stopped --network host -e LISTEN_ADDR=127.0.0.1:2284 -e IMMICH_URL=http://127.0.0.1:2283 immich-backup-proxy:latest`.
@@ -128,7 +142,8 @@ Deploy: copy `proxy/` to `/opt/immich-backup-proxy`, then
 
 The coupling to Immich is `POST /api/assets` (multipart fields `assetData`, `fileCreatedAt`,
 `fileModifiedAt`, `filename`, `isFavorite`, `duration`, `livePhotoVideoId`), `PUT /api/assets/copy`
-and `DELETE /api/assets`, checked against v3.3.3.
+(with `stack`/`favorite` flags), `DELETE /api/assets`, and stacks (`POST /api/stacks` with the shown
+asset first, `GET /api/stacks?primaryAssetId=`, `DELETE /api/stacks/{id}`), checked against v3.3.3.
 Before bumping `IMMICH_VERSION`, check that DTO in the release. If Immich merges resumable uploads
 (immich-app/immich#22385), PhotoKit could upload to Immich directly and the proxy can go.
 

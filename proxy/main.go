@@ -49,6 +49,7 @@ const (
 	hResult   = "X-Immich-Result"   // Immich's "created" / "duplicate" / "replaced"
 	hError    = "X-Immich-Error"    // short error text on failure
 	hReplaced = "X-Immich-Replaced" // result of X-Replace-Asset-Id: "ok" or what failed
+	hStacked  = "X-Immich-Stacked"  // result of X-Stack-Original-Id: "ok" or what failed
 )
 
 func uploadHandler(immich string, client *http.Client) http.HandlerFunc {
@@ -101,9 +102,16 @@ func uploadHandler(immich string, client *http.Client) http.HandlerFunc {
 		if resp.StatusCode/100 == 2 && result.ID != "" {
 			w.Header().Set(hAssetID, result.ID)
 			w.Header().Set(hResult, result.Status)
-			// An edited photo replaces the asset uploaded before the edit. Skipped when Immich
-			// matched the upload to that same asset (e.g. the edit was reverted).
-			if old := r.Header.Get("X-Replace-Asset-Id"); old != "" && old != result.ID {
+			old := r.Header.Get("X-Replace-Asset-Id")
+			// An edited render goes on top of a stack with the untouched original under it.
+			// Skipped when Immich matched the render to the original itself (same bytes).
+			if original := r.Header.Get("X-Stack-Original-Id"); original != "" && original != result.ID {
+				outcome := stackEdit(r.Context(), client, immich, r.Header.Get("x-api-key"), original, old, result.ID)
+				w.Header().Set(hStacked, headerSafe(outcome))
+				log.Printf("stack %s on original %s (was %s): %s", result.ID, original, old, outcome)
+			} else if old != "" && old != result.ID {
+				// An edited photo replaces the asset uploaded before the edit. Skipped when Immich
+				// matched the upload to that same asset (e.g. the edit was reverted).
 				outcome := replace(r.Context(), client, immich, r.Header.Get("x-api-key"), old, result.ID)
 				w.Header().Set(hReplaced, headerSafe(outcome))
 				log.Printf("replace %s with %s: %s", old, result.ID, outcome)
@@ -142,14 +150,98 @@ func replace(ctx context.Context, client *http.Client, immich, apiKey, oldID, ne
 	return "ok"
 }
 
-// immichJSON sends a JSON request and returns the status and Immich's error message, if any.
+// stackEdit puts a new render (newID) on top of a stack with the original under it. oldID is what
+// stood for the photo before: a previous render (its albums, shared links and sidecar are copied,
+// its stack removed, then it is trashed) or the original itself (albums copied, nothing trashed).
+// When Immich matched the upload to oldID (the render was already there), only the stack is made.
+func stackEdit(ctx context.Context, client *http.Client, immich, apiKey, originalID, oldID, newID string) string {
+	if oldID != "" && oldID != newID {
+		copyBody := map[string]any{"sourceId": oldID, "targetId": newID, "stack": false, "favorite": false}
+		code, msg, err := immichJSON(ctx, client, http.MethodPut, immich+"/api/assets/copy", apiKey, copyBody)
+		switch {
+		case err != nil:
+			return "copy failed: " + err.Error()
+		case code/100 != 2 && !(code == http.StatusBadRequest && strings.Contains(msg, "must exist")):
+			return fmt.Sprintf("copy HTTP %d %s", code, msg)
+		}
+		if oldID != originalID {
+			// The previous render's stack; otherwise it would stay behind as a stack of one.
+			ids, err := stackIDs(ctx, client, immich, apiKey, oldID)
+			if err != nil {
+				return "stack lookup failed: " + err.Error()
+			}
+			for _, id := range ids {
+				code, msg, err := immichJSON(ctx, client, http.MethodDelete, immich+"/api/stacks/"+url.PathEscape(id), apiKey, nil)
+				if err != nil || code/100 != 2 {
+					return fmt.Sprintf("unstack HTTP %d %s %v", code, msg, err)
+				}
+			}
+		}
+	}
+	// The first ID is the one shown. A stack already topped by newID is merged into this one.
+	code, msg, err := immichJSON(ctx, client, http.MethodPost, immich+"/api/stacks", apiKey, map[string]any{"assetIds": []string{newID, originalID}})
+	switch {
+	case err != nil:
+		return "stack failed: " + err.Error()
+	case code/100 != 2:
+		return fmt.Sprintf("stack HTTP %d %s", code, msg)
+	}
+	if oldID != "" && oldID != newID && oldID != originalID {
+		code, msg, err := immichJSON(ctx, client, http.MethodDelete, immich+"/api/assets", apiKey, map[string]any{"ids": []string{oldID}})
+		switch {
+		case err != nil:
+			return "trash failed: " + err.Error()
+		case code/100 != 2:
+			return fmt.Sprintf("trash HTTP %d %s", code, msg)
+		}
+	}
+	return "ok"
+}
+
+// stackIDs returns the IDs of the stacks whose top asset is primaryID.
+func stackIDs(ctx context.Context, client *http.Client, immich, apiKey, primaryID string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, immich+"/api/stacks?primaryAssetId="+url.QueryEscape(primaryID), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-api-key", apiKey)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var stacks []struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&stacks); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(stacks))
+	for _, s := range stacks {
+		ids = append(ids, s.ID)
+	}
+	return ids, nil
+}
+
+// immichJSON sends a JSON request (no body when body is nil) and returns the status and
+// Immich's error message, if any.
 func immichJSON(ctx context.Context, client *http.Client, method, url, apiKey string, body any) (int, string, error) {
-	data, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(data))
+	var reader io.Reader
+	if body != nil {
+		data, _ := json.Marshal(body)
+		reader = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
 		return 0, "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("x-api-key", apiKey)
 	resp, err := client.Do(req)

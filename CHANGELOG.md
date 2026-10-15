@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 (2026-10-15): edits keep the original
+
+- An edited photo is now one stack in Immich: the edit on top (what the timeline shows), the
+  untouched original under it. Editing again replaces only the edit; Revert in Photos puts the
+  original back on top and trashes the edit, without uploading anything. Live Photos and videos too.
+- Photos edited earlier: Advanced > "Keep originals of edited photos" gives them the same stack
+  (Immich reuses what it already has; the rest uploads).
+- Delete sync trashes the original along with the edit.
+- Proxy: new `X-Stack-Original-Id` header (needs the new proxy on home; older apps are unaffected).
+- Who must act: the user adds `stack.create`, `stack.read`, `stack.delete` to the app's Immich API key
+  (Account settings > API keys > edit), installs the IPA, then optionally taps "Keep originals of
+  edited photos". Claude deployed the proxy.
+
 ## 0.5.2 (2026-10-15): never delete from a stale list
 
 - If a deletion sync fails (Immich unreachable, an error mid-run), the list of photos trashed in
