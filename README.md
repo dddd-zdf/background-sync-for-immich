@@ -37,6 +37,7 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
 
 Verified 2026-10-15 on the author's iPhone (iOS 27, free account, SideStore 0.7.0-extfix.2): photos
 reach Immich about 2 minutes after they're taken, with the app closed and after a force-quit.
+0.2.0 verified the same day: Live Photos arrive paired (video hidden, plays in Immich) and videos arrive.
 
 ## What gets uploaded
 
