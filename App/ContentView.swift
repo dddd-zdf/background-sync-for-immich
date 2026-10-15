@@ -49,7 +49,10 @@ struct ContentView: View {
                     Button("Upload newest photo (test)") {
                         Settings.testUploadRequested = true
                         SharedLog.write("app", "test upload requested")
-                        refresh()
+                        // After the extension reports .completed, iOS only wakes it on a photo library
+                        // change; a settings flag isn't one. Re-enabling it makes iOS run it right away.
+                        setExtension(false)
+                        setExtension(true)
                     }
                     .disabled(!extensionEnabled)
                 } header: {

@@ -14,13 +14,19 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     }
 
     func processJobs() async -> PHBackgroundResourceUploadProcessingResult {
+        // iOS can reuse this instance after willTerminate(), so the stop flag is per run.
+        cancelled.value = false
         Settings.lastInvocation = Date()
         Settings.invocationCount += 1
+        SharedLog.write("ext", "processJobs #\(Settings.invocationCount) start")
         var state = UploadState.load()
         defer { state.save() }
         do {
             try acknowledgeFinishedJobs(&state)
-            guard !cancelled.value else { return .processing }
+            guard !cancelled.value else {
+                SharedLog.write("ext", "stopped early (willTerminate)")
+                return .processing
+            }
             let created = try createJobs(&state)
             let active = !state.inflight.isEmpty
             SharedLog.write("ext", "processJobs done: created \(created), inflight \(state.inflight.count)")
