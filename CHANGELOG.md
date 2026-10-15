@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.2 (2026-10-15): never delete from a stale list
+
+- If a deletion sync fails (Immich unreachable, an error mid-run), the list of photos trashed in
+  Immich is now emptied instead of kept from the last good sync, so the "Trashed in Immich" album is
+  emptied too. Before, a photo restored in Immich after that last good sync could still be deleted
+  from the iPhone by the album Shortcut or the delete button. The next good sync refills the list.
+- The delete button stops with "Nothing removed" when its fresh check fails.
+- Who must act: the user installs the IPA (no setting changes).
+
 ## 0.5.1 (2026-10-15): fully automatic with a Shortcut
 
 - The "Sync Immich deletions" action also fills a Photos album "Trashed in Immich" with exactly the

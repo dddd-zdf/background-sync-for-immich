@@ -43,6 +43,9 @@ final class DeleteSync: ObservableObject {
             result = try await pass(&store, linkBudget: linkBudget)
         } catch {
             result = "Sync failed: \(error.localizedDescription)"
+            // The list is from an older check; a photo restored in Immich since then must not be
+            // deleted from the iPhone (the album Shortcut deletes without asking). The next good sync refills it.
+            store.pendingRemoval = [:]
         }
         store.lastSync = Date()
         store.lastResult = result
@@ -267,7 +270,9 @@ final class DeleteSync: ObservableObject {
     /// Deletes the photos trashed in Immich from the iPhone. iOS asks first; they then sit in
     /// Recently Deleted for 30 days.
     func removePendingFromPhone() async -> String {
-        await run(linkBudget: 0)  // fresh check: drops anything restored in Immich since the last sync
+        // Fresh check: drops anything restored in Immich since the last sync.
+        let check = await run(linkBudget: 0)
+        if check.hasPrefix("Sync failed") { return "Nothing removed. \(check)" }
         var store = SyncStore.load()
         let ids = Array(store.pendingRemoval.keys)
         guard !ids.isEmpty else { return "Nothing to remove." }
