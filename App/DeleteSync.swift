@@ -164,7 +164,50 @@ final class DeleteSync: ObservableObject {
 
     /// For the Shortcut: a short sync (`run` also plans the notification).
     func runInBackground() async -> String {
-        await run(linkBudget: 20)
+        let summary = await run(linkBudget: 20)
+        await stageAlbum()
+        return summary
+    }
+
+    static let albumTitle = "Trashed in Immich"
+
+    /// Makes the "Trashed in Immich" album hold exactly the photos waiting to be deleted from the
+    /// iPhone, so a Shortcut can delete them with Find Photos (album) > Delete Photos, which with
+    /// "Allow Deleting Without Confirmation" needs no tap. Adding to an album needs no prompt.
+    /// Restored-in-Immich photos drop out. Anything added to the album by hand gets deleted too.
+    func stageAlbum() async {
+        let wanted = Set(store.pendingRemoval.keys)
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(format: "title == %@", Self.albumTitle)
+        var album = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .albumRegular, options: options).firstObject
+        if album == nil && wanted.isEmpty { return }
+        do {
+            if album == nil {
+                var placeholder: String?
+                try await PHPhotoLibrary.shared().performChanges {
+                    placeholder = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: Self.albumTitle)
+                        .placeholderForCreatedAssetCollection.localIdentifier
+                }
+                album = placeholder.flatMap {
+                    PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [$0], options: nil).firstObject
+                }
+            }
+            guard let album else { return }
+            let inside = PHAsset.fetchAssets(in: album, options: nil)
+            var current = Set<String>()
+            for i in 0..<inside.count { current.insert(inside.object(at: i).localIdentifier) }
+            let toAdd = PHAsset.fetchAssets(withLocalIdentifiers: Array(wanted.subtracting(current)), options: nil)
+            let toRemove = PHAsset.fetchAssets(withLocalIdentifiers: Array(current.subtracting(wanted)), options: nil)
+            guard toAdd.count > 0 || toRemove.count > 0 else { return }
+            try await PHPhotoLibrary.shared().performChanges {
+                let change = PHAssetCollectionChangeRequest(for: album)
+                if toAdd.count > 0 { change?.addAssets(toAdd) }
+                if toRemove.count > 0 { change?.removeAssets(toRemove) }
+            }
+            SharedLog.write("sync", "\(Self.albumTitle) album: +\(toAdd.count) -\(toRemove.count), now \(wanted.count)")
+        } catch {
+            SharedLog.write("sync", "\(Self.albumTitle) album not updated: \(error.localizedDescription)")
+        }
     }
 
     /// While photos trashed in Immich wait, keeps one notification planned at the chosen local time,

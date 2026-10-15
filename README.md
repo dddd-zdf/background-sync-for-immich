@@ -63,7 +63,9 @@ trash on the next sync, Live Photo videos included.
 Runs in the app (`App/DeleteSync.swift`): on open, pull to refresh, and the Shortcuts action "Sync
 Immich deletions" (Shortcuts > Automation > Time of Day > Run Immediately; the only way to run it
 with the app swiped away). The upload extension also trashes iPhone deletions itself, but iOS only
-wakes it for new photos, not deletions (tested 2026-10-15). State is `sync.json` in the app group,
+wakes it for new photos, not deletions (tested 2026-10-15). The Shortcuts action also stages
+photos trashed in Immich in a "Trashed in Immich" album, so an automation can delete them unprompted
+(Find Photos by album > Delete Photos, with Shortcuts' Allow Deleting Without Confirmation). State is `sync.json` in the app group,
 written only by the app; the extension's trashes are in `UploadState.trashed`.
 
 1. Reads every Immich asset (`POST /api/search/metadata`, timeline + archive, trashed included).
