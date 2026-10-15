@@ -39,31 +39,18 @@ jobs:
           test -d build/Build/Products/Release-iphoneos/ImmichBackup.app
 
       # SideStore re-signs the app on the phone, but it reads the entitlements (app group)
-      # from the binaries, so sign ad hoc with them first. Inner bundles before the outer one.
-      - name: Package IPAs
+      # from the binaries, so sign ad hoc with them first. Inner bundle before the outer one.
+      # Installing needs SideStore with the Extensions/ signing fix (see README).
+      - name: Package IPA
         run: |
           set -ex
-          APP=build/Build/Products/Release-iphoneos/ImmichBackup.app
-          sign() { codesign -f -s - --generate-entitlement-der --entitlements "$2" "$1"; }
-
-          # Variant A: standard layout, extension in Extensions/ (what Xcode produces).
-          mkdir -p out/a/Payload && cp -R "$APP" out/a/Payload/
-          A=out/a/Payload/ImmichBackup.app
-          sign "$A/Extensions/UploadExtension.appex" UploadExtension/UploadExtension.entitlements
-          sign "$A" App/App.entitlements
-          (cd out/a && zip -qry ../ImmichBackup-extensions.ipa Payload)
-
-          # Variant B: extension moved to PlugIns/, the only folder SideStore's signer scans.
-          mkdir -p out/b/Payload && cp -R "$APP" out/b/Payload/
-          B=out/b/Payload/ImmichBackup.app
-          mkdir -p "$B/PlugIns" && mv "$B/Extensions/UploadExtension.appex" "$B/PlugIns/" && rmdir "$B/Extensions"
-          sign "$B/PlugIns/UploadExtension.appex" UploadExtension/UploadExtension.entitlements
-          sign "$B" App/App.entitlements
-          (cd out/b && zip -qry ../ImmichBackup-plugins.ipa Payload)
-
-          find out/a/Payload -maxdepth 3 | sort
-          codesign -d --entitlements - "$A/Extensions/UploadExtension.appex"
-          plutil -p "$A/Extensions/UploadExtension.appex/Info.plist"
+          mkdir -p out/Payload && cp -R build/Build/Products/Release-iphoneos/ImmichBackup.app out/Payload/
+          APP=out/Payload/ImmichBackup.app
+          codesign -f -s - --generate-entitlement-der --entitlements UploadExtension/UploadExtension.entitlements "$APP/Extensions/UploadExtension.appex"
+          codesign -f -s - --generate-entitlement-der --entitlements App/App.entitlements "$APP"
+          VERSION=$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist")
+          (cd out && zip -qry "ImmichBackup-$VERSION.ipa" Payload)
+          codesign -d --entitlements - "$APP/Extensions/UploadExtension.appex"
           ls -la out/*.ipa
 
       - uses: actions/upload-artifact@v4

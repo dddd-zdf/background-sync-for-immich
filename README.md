@@ -27,22 +27,42 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
 
 ## Build and install
 
-1. Push to `main` (or run the "iOS build" workflow). The `ipa-N` artifact has two IPAs:
-   - `ImmichBackup-extensions.ipa`: standard layout, extension in `Extensions/`.
-   - `ImmichBackup-plugins.ipa`: extension moved to `PlugIns/` (workaround test, see below).
-2. Install with SideStore. In the app: set server URL and API key (Immich: Account settings >
-   API keys, permissions `asset.upload` and `user.read`), allow full Photos access, turn on the extension.
+1. Push to `main` (or run the "iOS build" workflow). The `ipa-N` artifact has `ImmichBackup-<version>.ipa`.
+2. Install it with the patched SideStore (below); official SideStore can't sign the extension.
+   Updating over an existing install keeps settings and upload state.
+3. In the app: server URL and API key (Immich: Account settings > API keys, permissions
+   `asset.upload` and `user.read`), full Photos access, turn on the extension, then
+   "Back up new photos automatically" (covers photos taken from that moment on).
 
-## Known risk: SideStore and ExtensionKit
+Verified 2026-10-15 on the author's iPhone (iOS 27, free account, SideStore 0.7.0-extfix.2): photos
+reach Immich about 2 minutes after they're taken, with the app closed and after a force-quit.
+
+## How iOS runs the extension
+
+- iOS calls `processJobs()` when it's enabled, on photo library changes, and again while we return
+  `.processing`. After `.completed` it waits for the next library change, so the app's test button
+  re-enables the extension to get an immediate run.
+- iOS may call `willTerminate()` and then reuse the same instance; the stop flag is reset per run.
+- Debug with the app's Log screen (extension and app write to `log.txt` in the app group) and
+  `ssh home sudo docker logs immich-backup-proxy`.
+
+## SideStore and ExtensionKit
 
 SideStore's signer (SideSign `AppBundle.loadExtensions`) only looks in `PlugIns/`. This
-extension is an ExtensionKit extension, which Xcode puts in `Extensions/`, so official SideStore
-installs it unsigned and the install fails. Moving it to `PlugIns/` doesn't work either: iOS then
-demands an `NSExtension` dictionary ("extensionDictionary must be set", tested 2026-10-14).
+extension is an ExtensionKit extension, which lives in `Extensions/`, so official SideStore
+leaves it without an App ID or profile and the install fails. Moving it to `PlugIns/` doesn't work
+either: iOS then demands an `NSExtension` dictionary ("extensionDictionary must be set", tested 2026-10-14).
 
-Fix: SideSign also scans `Extensions/`. Until that is upstream, use the patched SideStore from the
-private repo github.com/dddd-zdf/sidestore-extfix (SideStore develop + `patches/sidesign-extensions.patch`;
-run its workflow, install the IPA from inside SideStore).
+Fix: SideSign also scans `Extensions/` (one function). Until that is upstream, use the patched
+SideStore from the private repo github.com/dddd-zdf/sidestore-extfix (SideStore develop 12ff39c +
+`patches/sidesign-extensions.patch`, built with Xcode 26.4 like the official nightly). Install its
+IPA from inside SideStore (or with iloader). iloader's own signer (isideload) has the same gap.
+
+Apple sign-in (error 80045 / 503, Oct 2026): SideStore's default Android anisette servers stopped
+working. Use the Windows servers iloader 2.3.8 uses: Anisette Servers > Server List URL
+`https://example.com/anisette-servers.json`, pick Jkcoxson, then User Customizations >
+Anisette Client Configuration > Fetch > Save as Overrides, reset adi.pb, sign in with
+trusted-device 2FA.
 
 ## Proxy
 

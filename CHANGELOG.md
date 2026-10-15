@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 (2026-10-15)
+
+- Phase 0 verified on the phone: background uploads reach Immich with the app closed and after a
+  force-quit (about 2 minutes after the photo).
+- Fix: the test photo and automatic backup could queue the same photo twice in one run.
+- CI builds one IPA (`ImmichBackup-<version>.ipa`); the `PlugIns/` variant is gone (iOS rejects it).
+- Who must act: nobody (optional update).
+
 ## 0.1.1 (2026-10-15)
 
 - Fix: the extension stayed stopped after iOS sent willTerminate but reused the process, so later

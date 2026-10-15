@@ -93,7 +93,8 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             SharedLog.write("ext", "test upload requested, found \(assets.count) photo")
         }
         if let since = Settings.autoSince {
-            let busy = Set(state.inflight.values)
+            // Skip what's uploaded, already queued, or just picked as the test photo.
+            let busy = Set(state.inflight.values).union(assets.map(\.localIdentifier))
             assets += newestAssets(limit: 200, after: since, mediaType: nil).filter {
                 state.uploaded[$0.localIdentifier] == nil && !busy.contains($0.localIdentifier)
                     && state.failures[$0.localIdentifier, default: 0] < Self.maxAttempts
