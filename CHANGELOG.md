@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.1 (2026-10-15): originals come back from the trash
+
+- Immich matches uploads to trashed photos too. "Keep originals of edited photos" would have
+  stacked an edit on an original sitting in Immich's trash (752 there now, mostly from the
+  2026-10-14 cleanup), which Immich then deletes for good after 30 days (from about 2026-11-12).
+  The proxy now restores an original (and a Live Photo's original video) when Immich matches it
+  to an existing asset. Other uploads are unchanged: a photo trashed in Immich stays trashed.
+- "Keep originals" skips photos trashed in Immich that are waiting to be deleted from the iPhone.
+- Who must act: the user installs 0.6.1 instead of 0.6.0 and taps "Keep originals of edited photos"
+  before 2026-11-12. Claude deployed the proxy.
+
 ## 0.6.0 (2026-10-15): edits keep the original
 
 - An edited photo is now one stack in Immich: the edit on top (what the timeline shows), the

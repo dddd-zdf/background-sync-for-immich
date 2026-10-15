@@ -225,3 +225,44 @@ func TestStackEdit(t *testing.T) {
 		}
 	}
 }
+
+// TestOriginalRestoredFromTrash: an original that Immich matched to an existing (maybe trashed)
+// asset is restored; other duplicates are left alone.
+func TestOriginalRestoredFromTrash(t *testing.T) {
+	var calls []string
+	immich := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/assets":
+			io.WriteString(w, `{"id":"dup","status":"duplicate"}`)
+		case "POST /api/trash/restore/assets":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			b, _ := json.Marshal(body)
+			calls = append(calls, string(b))
+			io.WriteString(w, `{"count":1}`)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer immich.Close()
+	proxy := httptest.NewServer(uploadHandler(immich.URL, http.DefaultClient))
+	defer proxy.Close()
+
+	for _, part := range []string{"original", "originalVideo", "main", "video"} {
+		calls = nil
+		req, _ := http.NewRequest(http.MethodPost, proxy.URL, strings.NewReader("PHOTO-BYTES"))
+		req.Header.Set("x-api-key", "key123")
+		req.Header.Set("X-Upload-Part", part)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		restores := strings.HasPrefix(part, "original")
+		if restores && (strings.Join(calls, "|") != `{"ids":["dup"]}` || resp.Header.Get(hRestored) != "ok") {
+			t.Errorf("%s: calls %v, header %q", part, calls, resp.Header.Get(hRestored))
+		}
+		if !restores && (len(calls) != 0 || resp.Header.Get(hRestored) != "") {
+			t.Errorf("%s: should not restore, calls %v", part, calls)
+		}
+	}
+}

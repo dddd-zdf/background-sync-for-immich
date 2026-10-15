@@ -50,6 +50,7 @@ const (
 	hError    = "X-Immich-Error"    // short error text on failure
 	hReplaced = "X-Immich-Replaced" // result of X-Replace-Asset-Id: "ok" or what failed
 	hStacked  = "X-Immich-Stacked"  // result of X-Stack-Original-Id: "ok" or what failed
+	hRestored = "X-Immich-Restored" // an original matched an existing asset: restore from trash, "ok" or what failed
 )
 
 func uploadHandler(immich string, client *http.Client) http.HandlerFunc {
@@ -102,6 +103,18 @@ func uploadHandler(immich string, client *http.Client) http.HandlerFunc {
 		if resp.StatusCode/100 == 2 && result.ID != "" {
 			w.Header().Set(hAssetID, result.ID)
 			w.Header().Set(hResult, result.Status)
+			// Immich also matches uploads to trashed assets. An edit's original matched in the trash
+			// (e.g. deleted in an earlier cleanup) must come back, or it would be stacked under the
+			// edit and then emptied with the trash. Restoring an asset that isn't trashed does nothing.
+			if part := r.Header.Get("X-Upload-Part"); result.Status == "duplicate" && (part == "original" || part == "originalVideo") {
+				code, msg, err := immichJSON(r.Context(), client, http.MethodPost, immich+"/api/trash/restore/assets", r.Header.Get("x-api-key"), map[string]any{"ids": []string{result.ID}})
+				outcome := "ok"
+				if err != nil || code/100 != 2 {
+					outcome = fmt.Sprintf("HTTP %d %s %v", code, msg, err)
+				}
+				w.Header().Set(hRestored, headerSafe(outcome))
+				log.Printf("restore original %s if trashed: %s", result.ID, outcome)
+			}
 			old := r.Header.Get("X-Replace-Asset-Id")
 			// An edited render goes on top of a stack with the untouched original under it.
 			// Skipped when Immich matched the render to the original itself (same bytes).

@@ -81,6 +81,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             let result = headers["x-immich-result"] ?? ""
             let replaced = (headers["x-immich-replaced"].map { " replaced: \($0)" } ?? "")
                 + (headers["x-immich-stacked"].map { " stacked: \($0)" } ?? "")
+                + (headers["x-immich-restored"].map { " restored: \($0)" } ?? "")
 
             if !immichID.isEmpty {
                 switch part {
@@ -291,6 +292,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     private func keepOriginalsOfEditedPhotos(_ state: inout UploadState) {
         let tracked = Set(state.uploaded.keys).union(sync.links.keys)
             .subtracting(sync.gone).subtracting(state.trashed).subtracting(state.inflight.values)
+            .subtracting(sync.pendingRemoval.keys)  // trashed in Immich: on their way off the iPhone
             .filter { state.originals[$0] == nil && state.replacing[$0] == nil }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: Array(tracked), options: nil)
         var queued = 0

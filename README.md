@@ -64,7 +64,8 @@ trash on the next sync, Live Photo videos included.
     favorite to the original and trashes the render.
   - Photos edited before 0.6.0 (or before the photo first uploaded under 0.5.x) are a single render
     in Immich until Advanced > "Keep originals of edited photos" queues them like a new edit.
-    Immich matches anything it already has by checksum, so only what's missing is stored.
+    Immich matches anything it already has by checksum, so only what's missing is stored. An original
+    matched to a trashed asset is restored from Immich's trash (`X-Immich-Restored`).
   - Anything with a full-size render counts as edited, including Portrait photos straight from the camera.
 - `state.json` in the app group (written only by the extension; the app asks for changes through
   settings flags): `uploaded` (Photos ID -> Immich ID, for later two-way sync), `liveVideos`,
