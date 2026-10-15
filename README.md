@@ -33,8 +33,8 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
    Updating over an existing install keeps settings and upload state.
 3. In the app: server URL and API key (Immich: Account settings > API keys, permissions
    `asset.upload`, `asset.read`, `asset.copy`, `asset.delete`, `user.read`),
-   full Photos access, turn on the extension, then "Back up automatically" (covers photos taken from
-   that moment on; set "Photos taken since" earlier to upload older ones).
+   full Photos access, turn on the extension, then "Upload new photos". Anything on the iPhone that
+   isn't in Immich uploads: new photos right away, older ones once the library check finds them missing.
 
 Verified 2026-10-15 on the author's iPhone (iOS 27, free account, SideStore 0.7.0-extfix.2): photos
 reach Immich about 2 minutes after they're taken, with the app closed and after a force-quit.
@@ -45,8 +45,8 @@ the notification, deleted them from the iPhone after the iOS prompt.
 ## What gets uploaded
 
 - Each job uploads one file: the version you see in Photos (the edited render if any, named like the
-  original, e.g. `IMG_1234.jpg`). Up to 20 jobs at once; photos from the last day first, then the
-  backlog from "Photos taken since", oldest first. A file that fails 3 times waits for "Retry all".
+  original, e.g. `IMG_1234.jpg`). Up to 20 jobs at once; photos from the last day first, then newer
+  ones since upload was turned on, then older ones the library check marked as not in Immich. A file that fails 3 times waits for "Retry all".
 - Live Photos: two jobs in sequence. The video goes first; once its job is acknowledged with an
   Immich ID, the still goes with `X-Live-Photo-Video-Id`, which Immich uses to pair them.
 - Edits: when an uploaded asset's modification date moves, the extension compares a hash of its

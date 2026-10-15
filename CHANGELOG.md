@@ -4,6 +4,9 @@
 
 - The app is now called Immich Sync (home screen, titles, Photos permission text); status reads
   "In sync" / "Syncing" / "Sync is off". Settings sections are "Upload" and "Deletes".
+- No more "Photos taken since" date: anything on the iPhone that isn't in Immich uploads. New photos
+  go right away; older ones once the library check finds no copy in Immich with the same bytes
+  (a photo edited after the Immich app uploaded it counts as missing, so its edited version uploads).
 - The CI artifact is now `ImmichSync-<version>.ipa`. Bundle IDs, app group and repo name unchanged,
   so it installs over the old app and keeps everything.
 - Who must act: the user installs the IPA (optional).

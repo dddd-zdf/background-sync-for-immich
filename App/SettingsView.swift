@@ -9,7 +9,6 @@ struct SettingsView: View {
     @State private var serverCheck = ""
     @State private var checking = false
     @State private var autoOn = Settings.autoSince != nil
-    @State private var since = Settings.autoSince ?? Date()
     @State private var wifiOnly = Settings.wifiOnly
     @State private var askOn = Settings.askEnabled
     @State private var askEvery = Settings.askEveryDays
@@ -25,20 +24,9 @@ struct SettingsView: View {
                     set: { on in
                         autoOn = on
                         Settings.autoSince = on ? (Settings.autoSince ?? Date()) : nil
-                        since = Settings.autoSince ?? Date()
-                        SharedLog.write("app", "auto backup \(on ? "on since \(since)" : "off")")
+                        SharedLog.write("app", "upload \(on ? "on" : "off")")
                         model.refresh()
                     }))
-                if autoOn {
-                    DatePicker("Photos taken since", selection: Binding(
-                        get: { since },
-                        set: { date in
-                            since = date
-                            Settings.autoSince = date
-                            SharedLog.write("app", "backup start date \(date)")
-                            model.wakeExtension()
-                        }), in: ...Date(), displayedComponents: .date)
-                }
                 Toggle("Wi-Fi only", isOn: Binding(
                     get: { wifiOnly },
                     set: { on in
@@ -49,7 +37,7 @@ struct SettingsView: View {
             } header: {
                 Text("Upload")
             } footer: {
-                Text("An earlier date also uploads older photos. Immich skips ones it already has, but each is still sent in full, so a big backlog uses a lot of data. Edited photos replace their old version in Immich.")
+                Text("Uploads every photo on this iPhone that isn't in Immich yet: new ones right away, older ones once the library check finds them missing. Edited photos replace their old version in Immich.")
             }
 
             Section {

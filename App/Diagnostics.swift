@@ -24,22 +24,27 @@ enum Diagnostics {
         let failure: UploadState.Failure
     }
 
-    /// Photos the extension still has to start: taken since the start date and not uploaded,
-    /// plus edited ones waiting to replace their old version. Excludes ones that gave up.
+    /// Photos the extension still has to start: new since upload was turned on, older ones the
+    /// library check found missing from Immich, and edits waiting to replace their old version.
+    /// Excludes ones that gave up.
     static func waitingCount(_ state: UploadState) -> Int {
         let busy = Set(state.inflight.values)
         var count = state.replacing.keys.filter { !busy.contains($0) && !state.gaveUp(on: $0) }.count
         guard let since = Settings.autoSince else { return count }
+        let sync = SyncStore.load()
+        func needed(_ id: String) -> Bool {
+            sync.immichID(for: id, state) == nil && state.replacing[id] == nil && !busy.contains(id) && !state.gaveUp(on: id)
+        }
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "creationDate > %@", since as NSDate)
-        let result = PHAsset.fetchAssets(with: options)
-        result.enumerateObjects { asset, _, _ in
-            let id = asset.localIdentifier
-            if state.uploaded[id] == nil && state.replacing[id] == nil && !busy.contains(id) && !state.gaveUp(on: id) {
-                count += 1
-            }
+        var counted = Set<String>()
+        PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in
+            if needed(asset.localIdentifier) { counted.insert(asset.localIdentifier) }
         }
-        return count
+        PHAsset.fetchAssets(withLocalIdentifiers: Array(sync.unmatched.keys), options: nil).enumerateObjects { asset, _, _ in
+            if needed(asset.localIdentifier) { counted.insert(asset.localIdentifier) }
+        }
+        return count + counted.count
     }
 
     /// Checks the API key against Immich, then that the upload proxy answers PhotoKit's

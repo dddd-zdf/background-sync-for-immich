@@ -211,6 +211,11 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             let dayAgo = Date().addingTimeInterval(-86400)
             addNeeded(fetch(after: max(since, dayAgo), ascending: false, mediaType: nil, limit: 0))
             if since < dayAgo { addNeeded(fetch(after: since, ascending: true, mediaType: nil, limit: 0)) }
+            // Older photos the app's library check found missing from Immich (no name/time
+            // candidate, or none with the same bytes): this is what replaces a backlog start date.
+            if !sync.unmatched.isEmpty {
+                addNeeded(PHAsset.fetchAssets(withLocalIdentifiers: Array(sync.unmatched.keys), options: nil))
+            }
         }
 
         var created = 0
