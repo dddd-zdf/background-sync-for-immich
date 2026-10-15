@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 (2026-10-15): new look
+
+- App icon: the Immich pinwheel with an indigo two-way sync badge (`design/app-icon.svg`; for
+  personal sideloading only, it borrows Immich's logo). Indigo accent colour to match.
+- Home screen shows only what matters: backup status, problems with a fix button (Photos access,
+  upload off, no server, failures), and "Delete from iPhone" when photos trashed in Immich wait.
+  Pull down to check Immich now.
+- Everything else moved to Settings (gear); extension details, recent results and the Log are
+  under Settings > Advanced.
+- Who must act: the user installs the IPA (optional).
+
 ## 0.3.0 (2026-10-15): two-way delete sync
 
 - Deleted on the iPhone -> moved to Immich's trash (Live Photo videos too). More than 25 at once

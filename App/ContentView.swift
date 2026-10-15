@@ -1,349 +1,232 @@
 import Photos
 import SwiftUI
 
+/// Home screen: is everything backed up, and is anything waiting for me. Everything else is in Settings.
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var serverURL = Settings.serverURL
-    @State private var apiKey = Settings.apiKey
-    @State private var serverCheck = ""
-    @State private var photosStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-    @State private var extensionEnabled = PHPhotoLibrary.shared().uploadJobExtensionEnabled
-    @State private var extensionError = ""
-    @State private var autoOn = Settings.autoSince != nil
-    @State private var since = Settings.autoSince ?? Date()
-    @State private var wifiOnly = Settings.wifiOnly
-    @State private var snapshot = Diagnostics.Snapshot()
-    @State private var waiting: Int?
+    @ObservedObject private var model = AppModel.shared
     @ObservedObject private var sync = DeleteSync.shared
-    @State private var syncMessage = ""
-    @State private var askOn = Settings.askEnabled
-    @State private var askEvery = Settings.askEveryDays
-    @FocusState private var daysFocused: Bool
-    @State private var askTime = Calendar.current.date(
-        from: DateComponents(hour: Settings.askHour, minute: Settings.askMinute)) ?? Date()
+    @State private var message = ""
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Status") {
-                    LabeledContent("Last upload", value: snapshot.state.lastUpload?.formatted(date: .abbreviated, time: .shortened) ?? "none yet")
-                    LabeledContent("Uploading", value: "\(snapshot.state.inflight.count)")
-                    LabeledContent("Waiting", value: waiting.map(String.init) ?? "counting...")
-                    LabeledContent("Backed up", value: "\(snapshot.state.uploaded.count)")
-                    if snapshot.state.failed.isEmpty {
-                        LabeledContent("Failed", value: "0")
-                    } else {
-                        NavigationLink {
-                            FailuresView(failures: snapshot.failures, retry: retryFailed)
-                        } label: {
-                            LabeledContent("Failed", value: "\(snapshot.state.failed.count)")
-                                .foregroundStyle(.red)
+            List {
+                Section {
+                    StatusHeader(model: model, syncing: sync.running)
+                        .listRowBackground(Color.clear)
+                }
+
+                if !problems.isEmpty {
+                    Section {
+                        ForEach(problems) { problem in
+                            problem.row
                         }
-                    }
-                    if !extensionEnabled {
-                        Text("The upload extension is off, so nothing uploads.").font(.footnote).foregroundStyle(.red)
                     }
                 }
 
-                Section {
-                    LabeledContent("Last sync", value: sync.store.lastSync?.formatted(date: .abbreviated, time: .shortened) ?? "never")
-                    LabeledContent("Linked to Immich", value: "\(Set(snapshot.state.uploaded.keys).union(sync.store.links.keys).subtracting(sync.store.gone).count)")
-                    if sync.running {
-                        HStack { ProgressView(); Text(sync.progress).font(.footnote) }
-                    } else if !sync.store.lastResult.isEmpty {
-                        Text(sync.store.lastResult).font(.footnote)
-                    }
-                    if !sync.store.pendingRemoval.isEmpty {
-                        Button("Remove \(sync.store.pendingRemoval.count) trashed in Immich from iPhone", role: .destructive) {
-                            Task { syncMessage = await sync.removePendingFromPhone(); refresh() }
-                        }
-                        .disabled(sync.running)
-                        Text(Self.names(sync.store.pendingRemoval)).font(.caption2).foregroundStyle(.secondary)
-                    }
-                    if !sync.store.heldTrash.isEmpty {
-                        Button("Move \(sync.store.heldTrash.count) gone from iPhone to Immich's trash", role: .destructive) {
-                            Task { syncMessage = await sync.trashHeld(); refresh() }
-                        }
-                        .disabled(sync.running)
-                        Text("Held back because more than \(DeleteSync.autoTrashLimit) disappeared at once: " + Self.names(sync.store.heldTrash))
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                    Toggle("Ask to delete", isOn: Binding(
-                        get: { askOn },
-                        set: { on in
-                            askOn = on
-                            Settings.askEnabled = on
-                            SharedLog.write("app", "ask to delete \(on ? "on" : "off")")
-                            Task { await sync.replanAskNotification() }
-                        }))
-                    if askOn {
-                        HStack {
-                            Text("Every")
-                            Spacer()
-                            TextField("7", value: $askEvery, format: .number)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 60)
-                                .focused($daysFocused)
-                            Text(askEvery == 1 ? "day" : "days")
-                        }
-                        .onChange(of: askEvery) { _, days in
-                            let clamped = min(max(days, 1), 365)
-                            if clamped != days { askEvery = clamped; return }
-                            Settings.askEveryDays = clamped
-                            SharedLog.write("app", "ask to delete every \(clamped) days")
-                            Task { await sync.replanAskNotification() }
-                        }
-                        DatePicker("At", selection: Binding(
-                            get: { askTime },
-                            set: { time in
-                                askTime = time
-                                let parts = Calendar.current.dateComponents([.hour, .minute], from: time)
-                                Settings.askHour = parts.hour ?? 19
-                                Settings.askMinute = parts.minute ?? 0
-                                Task { await sync.replanAskNotification() }
-                            }), displayedComponents: .hourAndMinute)
-                    }
-                    Button("Sync now") { Task { syncMessage = await sync.run(linkBudget: nil); refresh() } }
-                        .disabled(sync.running)
-                    if !syncMessage.isEmpty { Text(syncMessage).font(.footnote) }
-                } header: {
-                    Text("Two-way sync")
-                } footer: {
-                    Text("""
-                    Deleted on this iPhone: moved to Immich's trash. Trashed in Immich: removed from this iPhone after \
-                    iOS asks you (then in Recently Deleted for 30 days). Older photos are linked by file name or time \
-                    and a SHA1 check of the file. "Ask to delete" sends a notification at that time only when photos \
-                    are waiting; tapping it goes straight to the delete prompt. For a dependable daily check: Shortcuts > Automation > New > Time of Day \
-                    (or Charger) > "Sync Immich deletions" > Run Immediately.
-                    """)
-                }
-
-                Section {
-                    Toggle("Back up automatically", isOn: Binding(
-                        get: { autoOn },
-                        set: { on in
-                            autoOn = on
-                            Settings.autoSince = on ? (Settings.autoSince ?? Date()) : nil
-                            since = Settings.autoSince ?? Date()
-                            SharedLog.write("app", "auto backup \(on ? "on since \(since)" : "off")")
-                            refresh()
-                        }))
-                    if autoOn {
-                        DatePicker("Photos taken since", selection: Binding(
-                            get: { since },
-                            set: { date in
-                                since = date
-                                Settings.autoSince = date
-                                SharedLog.write("app", "backup start date \(date)")
-                                wakeExtension()
-                            }), in: ...Date())
-                    }
-                    Toggle("Wi-Fi only", isOn: Binding(
-                        get: { wifiOnly },
-                        set: { on in
-                            wifiOnly = on
-                            Settings.wifiOnly = on
-                            SharedLog.write("app", "wifi only \(on)")
-                        }))
-                } header: {
-                    Text("Backup")
-                } footer: {
-                    Text("""
-                    Backup starts from when you turned it on. Pick an earlier date to back up older photos too. \
-                    Immich skips photos it already has, but each one is still sent in full first, so a big backlog \
-                    uses a lot of data (turn on Wi-Fi only). Edited photos replace their old version in Immich \
-                    (the old one goes to Immich's trash). Wi-Fi only applies to uploads queued after you change it.
-                    """)
-                }
-
-                Section {
-                    TextField("https://photos.example.com", text: $serverURL)
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField("Immich API key", text: $apiKey)
-                    Button("Save and check") { Task { await saveAndCheck() } }
-                    if !serverCheck.isEmpty { Text(serverCheck).font(.footnote) }
-                } header: {
-                    Text("Server")
-                } footer: {
-                    Text("API key permissions: asset.upload, asset.read, asset.copy, asset.delete and user.read.")
-                }
-
-                Section {
-                    LabeledContent("Photos access", value: photosStatus.label)
-                    if photosStatus != .authorized {
-                        Button("Allow full access") {
-                            Task {
-                                photosStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+                if !sync.store.pendingRemoval.isEmpty {
+                    Section {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(sync.store.pendingRemoval.count) trashed in Immich")
+                                    .font(.headline)
+                                Text(Self.names(sync.store.pendingRemoval))
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             }
+                        } icon: {
+                            Image(systemName: "trash").foregroundStyle(.red)
                         }
+                        Button(role: .destructive) {
+                            Task { message = await sync.removePendingFromPhone(); model.refresh() }
+                        } label: {
+                            Text("Delete from iPhone").frame(maxWidth: .infinity)
+                        }
+                        .disabled(sync.running)
+                    } footer: {
+                        Text("iOS asks first. They stay in Recently Deleted for 30 days.")
                     }
-                    Toggle("Background upload extension", isOn: Binding(
-                        get: { extensionEnabled }, set: { setExtension($0) }))
-                        .disabled(photosStatus != .authorized)
-                    if !extensionError.isEmpty { Text(extensionError).font(.footnote).foregroundStyle(.red) }
-                    Button("Upload newest photo (test)") {
-                        Settings.testUploadRequested = true
-                        SharedLog.write("app", "test upload requested")
-                        wakeExtension()
-                    }
-                    .disabled(!extensionEnabled)
-                } header: {
-                    Text("Setup")
-                } footer: {
-                    Text("iOS decides when the extension runs, usually within minutes on Wi-Fi.")
                 }
 
-                Section("Diagnostics") {
-                    LabeledContent("App group", value: snapshot.appGroup)
-                    LabeledContent("Group container", value: snapshot.containerOK ? "ok" : "MISSING")
-                    LabeledContent("Extension runs", value: snapshot.invocations)
-                    LabeledContent("Jobs (process/retry/ack)", value: snapshot.jobs)
-                    if Settings.testUploadRequested { Text("Test upload waiting for the extension to run").font(.footnote) }
-                    ForEach(snapshot.state.recent.prefix(10), id: \.self) { Text($0).font(.caption2.monospaced()) }
-                    NavigationLink("Log") { LogView() }
+                if !sync.store.heldTrash.isEmpty {
+                    Section {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(sync.store.heldTrash.count) gone from iPhone").font(.headline)
+                                Text(Self.names(sync.store.heldTrash))
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                        } icon: {
+                            Image(systemName: "questionmark.circle").foregroundStyle(.orange)
+                        }
+                        Button(role: .destructive) {
+                            Task { message = await sync.trashHeld(); model.refresh() }
+                        } label: {
+                            Text("Move to Immich's trash").frame(maxWidth: .infinity)
+                        }
+                        .disabled(sync.running)
+                    } footer: {
+                        Text("Held back: more than \(DeleteSync.autoTrashLimit) disappeared at once, so it waits for you.")
+                    }
+                }
+
+                Section {
+                    row("On Immich", "\(model.onImmich)", icon: "photo.on.rectangle")
+                    row("Waiting to upload", model.waiting.map(String.init) ?? "…", icon: "clock")
+                    row("Last checked Immich", sync.store.lastSync.map(Self.relative) ?? "never", icon: "arrow.triangle.2.circlepath")
+                } footer: {
+                    if sync.running {
+                        Text(sync.progress)
+                    } else if !message.isEmpty {
+                        Text(message)
+                    }
                 }
             }
-            .navigationTitle("Immich Backup")
+            .navigationTitle("Backup")
             .toolbar {
-                // The number pad has no return key.
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") { daysFocused = false }
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    Image(systemName: "gearshape")
                 }
             }
-            .refreshable { refresh() }
-            .onAppear { refresh(); autoSync() }
+            .refreshable {
+                model.refresh()
+                message = await sync.run(linkBudget: nil)
+                model.refresh()
+            }
+            .onAppear { model.refresh(); autoSync() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { refresh(); autoSync(); removeIfRequested() }
+                if phase == .active { model.refresh(); autoSync(); removeIfRequested() }
             }
             .onChange(of: sync.removalRequested) { _, _ in removeIfRequested() }
             .task { await DeleteSync.requestNotifications() }
         }
     }
 
-    private func refresh() {
-        photosStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        extensionEnabled = PHPhotoLibrary.shared().uploadJobExtensionEnabled
-        snapshot = Diagnostics.Snapshot()
-        sync.reload()
-        let state = snapshot.state
-        Task.detached(priority: .utility) {
-            let count = Diagnostics.waitingCount(state)
-            await MainActor.run { waiting = count }
+    private func row(_ title: String, _ value: String, icon: String) -> some View {
+        LabeledContent {
+            Text(value)
+        } label: {
+            Label(title, systemImage: icon)
         }
+    }
+
+    private var problems: [Problem] {
+        var list: [Problem] = []
+        if model.photosStatus != .authorized {
+            list.append(Problem(id: "photos", text: "Needs full access to Photos", icon: "photo") {
+                Button("Allow") { Task { await model.requestPhotosAccess() } }
+            })
+        }
+        if !model.hasServer {
+            list.append(Problem(id: "server", text: "Add your Immich server", icon: "server.rack") {
+                NavigationLink("Set up") { SettingsView() }
+            })
+        }
+        if model.photosStatus == .authorized && !model.extensionEnabled {
+            list.append(Problem(id: "ext", text: "Background upload is off", icon: "pause.circle") {
+                Button("Turn on") { model.setExtension(true) }
+            })
+        }
+        if !model.snapshot.state.failed.isEmpty {
+            list.append(Problem(id: "failed", text: "\(model.snapshot.state.failed.count) failed to upload", icon: "exclamationmark.triangle") {
+                NavigationLink("See why") { FailuresView(failures: model.snapshot.failures, retry: model.retryFailed) }
+            })
+        }
+        return list
     }
 
     /// From the notification: iOS's delete prompt needs the app in the foreground.
     private func removeIfRequested() {
         guard sync.removalRequested, scenePhase == .active else { return }
         sync.removalRequested = false
-        Task { syncMessage = await sync.removePendingFromPhone(); refresh() }
+        Task { message = await sync.removePendingFromPhone(); model.refresh() }
     }
 
-    /// Syncs on open, at most every 15 minutes.
+    /// Checks Immich on open, at most every 15 minutes.
     private func autoSync() {
-        guard !sync.running, !sync.removalRequested, photosStatus == .authorized, !Settings.apiKey.isEmpty,
+        guard !sync.running, !sync.removalRequested, model.photosStatus == .authorized, model.hasServer,
               (sync.store.lastSync ?? .distantPast) < Date().addingTimeInterval(-900) else { return }
-        Task { await sync.run(linkBudget: nil); refresh() }
+        Task { await sync.run(linkBudget: nil); model.refresh() }
     }
 
-    private static func names(_ items: [String: SyncStore.Pending]) -> String {
+    static func names(_ items: [String: SyncStore.Pending]) -> String {
         let names = items.values.map(\.file).sorted()
-        return names.prefix(8).joined(separator: ", ") + (names.count > 8 ? " and \(names.count - 8) more" : "")
+        return names.prefix(6).joined(separator: ", ") + (names.count > 6 ? " and \(names.count - 6) more" : "")
     }
 
-    private func retryFailed() {
-        Settings.retryFailedRequested = true
-        SharedLog.write("app", "retry failed requested")
-        wakeExtension()
-    }
-
-    /// After the extension reports .completed, iOS only wakes it on a photo library change;
-    /// a settings change isn't one. Re-enabling it makes iOS run it right away.
-    private func wakeExtension() {
-        guard extensionEnabled else { refresh(); return }
-        setExtension(false)
-        setExtension(true)
-    }
-
-    private func setExtension(_ on: Bool) {
-        let library = PHPhotoLibrary.shared()
-        do {
-            // Enabling twice throws (PHPhotosErrorDomain 3202), so only call on a real change.
-            if on && !library.uploadJobExtensionEnabled {
-                try library.enableUploadJobExtension(with: PHAssetResourceUploadJobOptions())
-            } else if !on && library.uploadJobExtensionEnabled {
-                try library.disableUploadJobExtension()
-            }
-            extensionError = ""
-            SharedLog.write("app", "extension enabled = \(library.uploadJobExtensionEnabled)")
-        } catch {
-            let ns = error as NSError
-            extensionError = "\(ns.domain) \(ns.code): \(ns.localizedDescription)"
-            SharedLog.write("app", "enable/disable extension (\(on)) failed: \(extensionError) \(ns.userInfo)")
-        }
-        refresh()
-    }
-
-    private func saveAndCheck() async {
-        Settings.serverURL = serverURL
-        Settings.apiKey = apiKey
-        serverCheck = await Diagnostics.checkServer()
-        SharedLog.write("app", "server check: \(serverCheck)")
+    static func relative(_ date: Date) -> String {
+        date.formatted(.relative(presentation: .named))
     }
 }
 
-struct FailuresView: View {
-    let failures: [Diagnostics.FailureItem]
-    let retry: () -> Void
-    @Environment(\.dismiss) private var dismiss
+/// The big "Backed up" / "Uploading" header.
+private struct StatusHeader: View {
+    @ObservedObject var model: AppModel
+    let syncing: Bool
 
     var body: some View {
-        List {
-            Section {
-                ForEach(failures) { item in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.failure.file).font(.subheadline)
-                        Text(item.failure.reason).font(.caption).foregroundStyle(.red)
-                        Text("\(item.failure.count) of \(UploadState.maxAttempts) tries, last \(item.failure.date.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-            } footer: {
-                Text("After \(UploadState.maxAttempts) tries a photo is skipped until you retry.")
-            }
-            Button("Retry all") { retry(); dismiss() }
+        VStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 54, weight: .regular))
+                .foregroundStyle(color)
+                .symbolEffect(.pulse, isActive: busy)
+                .frame(height: 64)
+            Text(title).font(.title2.weight(.semibold))
+            Text(subtitle).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
-        .navigationTitle("Failed uploads")
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+
+    private var state: UploadState { model.snapshot.state }
+    private var off: Bool { !model.autoOn || !model.extensionEnabled || !model.hasServer || model.photosStatus != .authorized }
+    private var busy: Bool { !off && (!state.inflight.isEmpty || syncing) }
+
+    private var symbol: String {
+        if off { return "icloud.slash" }
+        if !state.inflight.isEmpty || (model.waiting ?? 0) > 0 { return "arrow.up.circle" }
+        return "checkmark.icloud"
+    }
+
+    private var color: Color {
+        if off { return .orange }
+        if !state.inflight.isEmpty || (model.waiting ?? 0) > 0 { return .accentColor }
+        return .green
+    }
+
+    private var title: String {
+        if off { return "Backup is off" }
+        if !state.inflight.isEmpty { return "Uploading \(state.inflight.count)" }
+        if let waiting = model.waiting, waiting > 0 { return "\(waiting) waiting" }
+        return "Backed up"
+    }
+
+    private var subtitle: String {
+        if off && !model.autoOn { return "Turn on automatic backup in Settings." }
+        guard let last = state.lastUpload else { return "Nothing uploaded yet." }
+        return "Last upload \(ContentView.relative(last))"
     }
 }
 
-struct LogView: View {
-    @State private var text = SharedLog.read()
+private struct Problem: Identifiable {
+    let id: String
+    let text: String
+    let icon: String
+    let action: AnyView
 
-    var body: some View {
-        ScrollView {
-            Text(text).font(.caption2.monospaced()).textSelection(.enabled).padding()
-        }
-        .navigationTitle("Log")
-        .toolbar {
-            ShareLink(item: text)
-            Button("Clear") { SharedLog.clear(); text = SharedLog.read() }
-        }
-        .refreshable { text = SharedLog.read() }
+    init<A: View>(id: String, text: String, icon: String, @ViewBuilder action: () -> A) {
+        self.id = id
+        self.text = text
+        self.icon = icon
+        self.action = AnyView(action())
     }
-}
 
-extension PHAuthorizationStatus {
-    var label: String {
-        switch self {
-        case .authorized: "Full access"
-        case .limited: "Limited (needs full)"
-        case .denied: "Denied (change in Settings)"
-        case .restricted: "Restricted"
-        case .notDetermined: "Not asked yet"
-        @unknown default: "Unknown"
+    var row: some View {
+        HStack {
+            Label(text, systemImage: icon).foregroundStyle(.orange)
+            Spacer()
+            action.buttonStyle(.borderless)
         }
     }
 }
