@@ -31,11 +31,26 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
 2. Install it with the patched SideStore (below); official SideStore can't sign the extension.
    Updating over an existing install keeps settings and upload state.
 3. In the app: server URL and API key (Immich: Account settings > API keys, permissions
-   `asset.upload` and `user.read`), full Photos access, turn on the extension, then
-   "Back up new photos automatically" (covers photos taken from that moment on).
+   `asset.upload`, `user.read`, `asset.copy`, `asset.delete`; the last two replace edited photos),
+   full Photos access, turn on the extension, then "Back up automatically" (covers photos taken from
+   that moment on; set "Photos taken since" earlier to upload older ones).
 
 Verified 2026-10-15 on the author's iPhone (iOS 27, free account, SideStore 0.7.0-extfix.2): photos
 reach Immich about 2 minutes after they're taken, with the app closed and after a force-quit.
+
+## What gets uploaded
+
+- Each job uploads one file: the version you see in Photos (the edited render if any, named like the
+  original, e.g. `IMG_1234.jpg`). Up to 20 jobs at once; photos from the last day first, then the
+  backlog from "Photos taken since", oldest first. A file that fails 3 times waits for "Retry all".
+- Live Photos: two jobs in sequence. The video goes first; once its job is acknowledged with an
+  Immich ID, the still goes with `X-Live-Photo-Video-Id`, which Immich uses to pair them.
+- Edits: when an uploaded asset's modification date moves, the extension compares a hash of its
+  adjustment data with the one recorded at upload. If it changed, the new render uploads with
+  `X-Replace-Asset-Id`; the proxy copies albums/shared links/stack to the new asset and trashes the old.
+- `state.json` in the app group (written only by the extension; the app asks for changes through
+  settings flags): `uploaded` (Photos ID -> Immich ID, for later two-way sync), `liveVideos`,
+  `versions`, `replacing`, `inflight`, `failed`.
 
 ## How iOS runs the extension
 
@@ -71,17 +86,21 @@ Caddy routes `photos.example.com/api/assets/background` to it. See infra `vms/ho
 
 - `OPTIONS` -> 501 (tells PhotoKit: no resumable uploads, send one plain request).
 - Request headers: `x-api-key`, `X-Filename` (percent-encoded), `X-Content-Type`,
-  `X-File-Created-At`, `X-File-Modified-At`, `X-Is-Favorite`, `X-Duration-Ms`, `X-Live-Photo-Video-Id`.
+  `X-File-Created-At`, `X-File-Modified-At`, `X-Is-Favorite`, `X-Duration-Ms`, `X-Live-Photo-Video-Id`,
+  `X-Replace-Asset-Id` (after a successful upload with a different ID: `PUT /api/assets/copy`, then
+  `DELETE /api/assets` to trash the old one). Others (`X-Asset-Id`, `X-Upload-Part`, ...) are only
+  for the extension, which reads them back from the finished job.
 - Response headers (PhotoKit keeps only headers): `X-Immich-Asset-Id`, `X-Immich-Status`,
-  `X-Immich-Result` (created/duplicate), `X-Immich-Error`.
+  `X-Immich-Result` (created/duplicate), `X-Immich-Error`, `X-Immich-Replaced` (ok or what failed).
 
 Deploy: copy `proxy/` to `/opt/immich-backup-proxy`, then
 `sudo docker build -t immich-backup-proxy:latest . && sudo docker rm -f immich-backup-proxy && sudo docker run -d --name immich-backup-proxy --restart unless-stopped --network host -e LISTEN_ADDR=127.0.0.1:2284 -e IMMICH_URL=http://127.0.0.1:2283 immich-backup-proxy:latest`.
 
 ### Immich upgrades
 
-The only coupling to Immich is `POST /api/assets` (multipart fields `assetData`, `fileCreatedAt`,
-`fileModifiedAt`, `filename`, `isFavorite`, `duration`, `livePhotoVideoId`), checked against v3.3.3.
+The coupling to Immich is `POST /api/assets` (multipart fields `assetData`, `fileCreatedAt`,
+`fileModifiedAt`, `filename`, `isFavorite`, `duration`, `livePhotoVideoId`), `PUT /api/assets/copy`
+and `DELETE /api/assets`, checked against v3.3.3.
 Before bumping `IMMICH_VERSION`, check that DTO in the release. If Immich merges resumable uploads
 (immich-app/immich#22385), PhotoKit could upload to Immich directly and the proxy can go.
 

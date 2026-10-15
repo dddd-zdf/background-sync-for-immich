@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -94,5 +95,56 @@ func TestPreflightIs501(t *testing.T) {
 	uploadHandler("http://unused", http.DefaultClient)(rec, httptest.NewRequest(http.MethodOptions, "/api/assets/background", nil))
 	if rec.Code != http.StatusNotImplemented {
 		t.Errorf("OPTIONS = %d", rec.Code)
+	}
+}
+
+// TestReplace: after the edited version uploads, the old asset's albums are copied and it is trashed.
+func TestReplace(t *testing.T) {
+	var calls []string
+	immich := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/assets":
+			w.WriteHeader(201)
+			io.WriteString(w, `{"id":"new","status":"created"}`)
+		case "PUT /api/assets/copy", "DELETE /api/assets":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			if r.Header.Get("x-api-key") != "key123" {
+				t.Errorf("api key missing on %s", r.URL.Path)
+			}
+			b, _ := json.Marshal(body)
+			calls = append(calls, r.Method+" "+string(b))
+			w.WriteHeader(204)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer immich.Close()
+	proxy := httptest.NewServer(uploadHandler(immich.URL, http.DefaultClient))
+	defer proxy.Close()
+
+	for _, old := range []string{"old", "new"} {
+		calls = nil
+		req, _ := http.NewRequest(http.MethodPost, proxy.URL, strings.NewReader("PHOTO-BYTES"))
+		req.Header.Set("x-api-key", "key123")
+		req.Header.Set("X-Replace-Asset-Id", old)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if old == "new" {
+			// Immich matched the upload to the old asset itself: nothing to replace.
+			if len(calls) != 0 || resp.Header.Get(hReplaced) != "" {
+				t.Errorf("same asset: calls %v, header %q", calls, resp.Header.Get(hReplaced))
+			}
+			continue
+		}
+		want := []string{
+			`PUT {"favorite":false,"sourceId":"old","targetId":"new"}`,
+			`DELETE {"ids":["old"]}`,
+		}
+		if strings.Join(calls, "|") != strings.Join(want, "|") || resp.Header.Get(hReplaced) != "ok" {
+			t.Errorf("calls %v, header %q", calls, resp.Header.Get(hReplaced))
+		}
 	}
 }

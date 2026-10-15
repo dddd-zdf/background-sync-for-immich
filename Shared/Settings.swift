@@ -15,10 +15,24 @@ enum Settings {
         set { d.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "apiKey") }
     }
 
-    /// When set, the extension uploads every photo/video created after this date.
+    /// When set, the extension uploads every photo/video created after this date. Defaults to
+    /// when automatic backup was turned on; moving it earlier uploads the backlog.
     static var autoSince: Date? {
         get { d.object(forKey: "autoSince") as? Date }
         set { d.set(newValue, forKey: "autoSince") }
+    }
+
+    /// Applies to jobs queued after the change (each upload request carries it).
+    static var wifiOnly: Bool {
+        get { d.bool(forKey: "wifiOnly") }
+        set { d.set(newValue, forKey: "wifiOnly") }
+    }
+
+    /// One-shot request from the app: forget failures so those assets are tried again.
+    /// (The app never writes state.json; the extension owns it.)
+    static var retryFailedRequested: Bool {
+        get { d.bool(forKey: "retryFailedRequested") }
+        set { d.set(newValue, forKey: "retryFailedRequested") }
     }
 
     /// One-shot request from the app: upload the newest photo once.

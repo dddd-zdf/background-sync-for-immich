@@ -7,6 +7,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,10 +44,11 @@ func envOr(key, fallback string) string {
 
 // Response headers read by the upload extension (PhotoKit lowercases them).
 const (
-	hAssetID = "X-Immich-Asset-Id" // Immich asset ID, set on success (created or duplicate)
-	hStatus  = "X-Immich-Status"   // Immich HTTP status code
-	hResult  = "X-Immich-Result"   // Immich's "created" / "duplicate" / "replaced"
-	hError   = "X-Immich-Error"    // short error text on failure
+	hAssetID  = "X-Immich-Asset-Id" // Immich asset ID, set on success (created or duplicate)
+	hStatus   = "X-Immich-Status"   // Immich HTTP status code
+	hResult   = "X-Immich-Result"   // Immich's "created" / "duplicate" / "replaced"
+	hError    = "X-Immich-Error"    // short error text on failure
+	hReplaced = "X-Immich-Replaced" // result of X-Replace-Asset-Id: "ok" or what failed
 )
 
 func uploadHandler(immich string, client *http.Client) http.HandlerFunc {
@@ -98,6 +101,13 @@ func uploadHandler(immich string, client *http.Client) http.HandlerFunc {
 		if resp.StatusCode/100 == 2 && result.ID != "" {
 			w.Header().Set(hAssetID, result.ID)
 			w.Header().Set(hResult, result.Status)
+			// An edited photo replaces the asset uploaded before the edit. Skipped when Immich
+			// matched the upload to that same asset (e.g. the edit was reverted).
+			if old := r.Header.Get("X-Replace-Asset-Id"); old != "" && old != result.ID {
+				outcome := replace(r.Context(), client, immich, r.Header.Get("x-api-key"), old, result.ID)
+				w.Header().Set(hReplaced, headerSafe(outcome))
+				log.Printf("replace %s with %s: %s", old, result.ID, outcome)
+			}
 		} else {
 			w.Header().Set(hError, headerSafe(fmt.Sprint(result.Message)))
 		}
@@ -106,6 +116,56 @@ func uploadHandler(immich string, client *http.Client) http.HandlerFunc {
 		w.WriteHeader(resp.StatusCode)
 		w.Write(respBody)
 	}
+}
+
+// replace copies albums, shared links, stack and sidecar from the old asset to the new one,
+// then moves the old one to Immich's trash. Favorite is not copied: the phone's value was uploaded.
+// If the old asset is already gone, there is nothing to do.
+func replace(ctx context.Context, client *http.Client, immich, apiKey, oldID, newID string) string {
+	copyBody := map[string]any{"sourceId": oldID, "targetId": newID, "favorite": false}
+	code, msg, err := immichJSON(ctx, client, http.MethodPut, immich+"/api/assets/copy", apiKey, copyBody)
+	switch {
+	case err != nil:
+		return "copy failed: " + err.Error()
+	case code == http.StatusBadRequest && strings.Contains(msg, "must exist"):
+		return "ok (old asset already gone)"
+	case code/100 != 2:
+		return fmt.Sprintf("copy HTTP %d %s", code, msg)
+	}
+	code, msg, err = immichJSON(ctx, client, http.MethodDelete, immich+"/api/assets", apiKey, map[string]any{"ids": []string{oldID}})
+	switch {
+	case err != nil:
+		return "trash failed: " + err.Error()
+	case code/100 != 2:
+		return fmt.Sprintf("trash HTTP %d %s", code, msg)
+	}
+	return "ok"
+}
+
+// immichJSON sends a JSON request and returns the status and Immich's error message, if any.
+func immichJSON(ctx context.Context, client *http.Client, method, url, apiKey string, body any) (int, string, error) {
+	data, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(data))
+	if err != nil {
+		return 0, "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-api-key", apiKey)
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Message any `json:"message"`
+	}
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	_ = json.Unmarshal(respBody, &result)
+	if result.Message == nil {
+		return resp.StatusCode, "", nil
+	}
+	return resp.StatusCode, fmt.Sprint(result.Message), nil
 }
 
 // uploadFields maps our request headers to Immich's AssetMediaCreateDto form fields.

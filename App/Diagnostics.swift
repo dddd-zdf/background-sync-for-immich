@@ -7,13 +7,39 @@ enum Diagnostics {
         var containerOK = AppGroup.container != nil
         var invocations: String = {
             guard let last = Settings.lastInvocation else { return "never" }
-            return "\(Settings.invocationCount), last \(last.formatted(date: .omitted, time: .shortened))"
+            return "\(Settings.invocationCount), last \(last.formatted(date: .abbreviated, time: .shortened))"
         }()
         var jobs: String = [PHAssetResourceUploadJob.Action.process, .retry, .acknowledge]
             .map { String(PHAssetResourceUploadJob.fetchJobs(action: $0, options: nil).count) }
             .joined(separator: " / ")
-        var uploadedCount = UploadState.load().uploaded.count
-        var recent = Array(UploadState.load().recent.prefix(10))
+        var state = UploadState.load()
+
+        var failures: [FailureItem] {
+            state.failed.map { FailureItem(id: $0.key, failure: $0.value) }.sorted { $0.failure.date > $1.failure.date }
+        }
+    }
+
+    struct FailureItem: Identifiable {
+        let id: String
+        let failure: UploadState.Failure
+    }
+
+    /// Photos the extension still has to start: taken since the start date and not uploaded,
+    /// plus edited ones waiting to replace their old version. Excludes ones that gave up.
+    static func waitingCount(_ state: UploadState) -> Int {
+        let busy = Set(state.inflight.values)
+        var count = state.replacing.keys.filter { !busy.contains($0) && !state.gaveUp(on: $0) }.count
+        guard let since = Settings.autoSince else { return count }
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(format: "creationDate > %@", since as NSDate)
+        let result = PHAsset.fetchAssets(with: options)
+        result.enumerateObjects { asset, _, _ in
+            let id = asset.localIdentifier
+            if state.uploaded[id] == nil && state.replacing[id] == nil && !busy.contains(id) && !state.gaveUp(on: id) {
+                count += 1
+            }
+        }
+        return count
     }
 
     /// Checks the API key against Immich, then that the upload proxy answers PhotoKit's

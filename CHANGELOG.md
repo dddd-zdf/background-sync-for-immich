@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0 (2026-10-15): full uploader
+
+- Live Photos: the video uploads first, then the photo with its Immich ID, so Immich pairs them.
+- Backlog: pick a "Photos taken since" date (default: when automatic backup was turned on).
+  Photos from the last day go first, then the backlog oldest first.
+- Edited photos replace their old version in Immich: the proxy copies albums, shared links and
+  stack to the new asset, then moves the old one to Immich's trash. An edit is detected by a change
+  in the photo's adjustment data, not just its modification date (favorites, albums and Photos'
+  own analysis change that too). Photos uploaded by 0.1.x count as unedited from now on.
+- Status screen: last upload, uploading, waiting, backed up, failed (with reasons and Retry all),
+  Wi-Fi only toggle (set per upload request; jobs already queued keep their setting). Log kept.
+- Edited renders upload as IMG_1234.jpg instead of FullSizeRender.jpg.
+- Proxy: new `X-Replace-Asset-Id` request header and `X-Immich-Replaced` response header
+  (deployed on `home` 2026-10-15).
+- Who must act: the user installs the new IPA over the old one in SideStore and adds `asset.copy` and
+  `asset.delete` to the Immich API key's permissions (or makes a new key with them).
+
 ## 0.1.2 (2026-10-15)
 
 - Phase 0 verified on the phone: background uploads reach Immich with the app closed and after a
