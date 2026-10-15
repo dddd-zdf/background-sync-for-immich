@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.3 (2026-10-15)
+
+- Fix: background trash of iPhone deletions found nothing, likely because fetching photos by ID
+  still returns ones in Recently Deleted. The extension now scans the library like the app does,
+  and logs each check ("delete check: N tracked, M gone").
+- Who must act: the user installs the IPA and retests.
+
 ## 0.4.2 (2026-10-15)
 
 - Deleting on the iPhone reaches Immich's trash in the background: the upload extension, which iOS

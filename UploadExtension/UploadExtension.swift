@@ -123,11 +123,16 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             .subtracting(sync.gone).subtracting(state.trashed)
             .subtracting(state.inflight.values).subtracting(state.replacing.keys)
         guard !tracked.isEmpty else { return }
-        let found = PHAsset.fetchAssets(withLocalIdentifiers: Array(tracked), options: nil)
-        guard found.count > 0 else { return }  // nothing visible at all: not trusting that
+        // Scan the library rather than fetching by ID: a fetch by ID may still return photos that
+        // are only in Recently Deleted. (Same check as the app's sync.)
+        let options = PHFetchOptions()
+        options.includeHiddenAssets = true
+        let library = PHAsset.fetchAssets(with: options)
+        guard library.count > 0 else { return }  // nothing visible at all: not trusting that
         var present = Set<String>()
-        for i in 0..<found.count { present.insert(found.object(at: i).localIdentifier) }
+        for i in 0..<library.count { present.insert(library.object(at: i).localIdentifier) }
         let missing = tracked.subtracting(present)
+        SharedLog.write("ext", "delete check: \(tracked.count) tracked, \(missing.count) gone from iPhone")
         guard !missing.isEmpty else { return }
         guard missing.count <= Self.autoTrashLimit else {
             SharedLog.write("ext", "\(missing.count) gone from iPhone at once; leaving them for the app to ask")
