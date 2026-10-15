@@ -25,6 +25,8 @@ final class DeleteSync: ObservableObject {
     @Published var removalRequested = false
 
     static let notificationID = "trashed-in-immich"
+    /// How often at most the "trashed in Immich" notification can come (the author's call; change freely).
+    static let notifyInterval: TimeInterval = 20 * 3600
 
     func reload() {
         if !running { store = SyncStore.load() }
@@ -114,7 +116,7 @@ final class DeleteSync: ObservableObject {
             }
             let id = asset.localIdentifier
             let resources = PHAssetResource.assetResources(for: asset)
-            var candidates = Set(resources.map { Self.nameKey($0.originalFilename) }).flatMap { byName[$0] ?? [] }
+            var candidates = Set(resources.map { Self.nameKey($0.filename) }).flatMap { byName[$0] ?? [] }
             if let created = asset.creationDate.map({ Int($0.timeIntervalSince1970) }) {
                 for second in (created - 2)...(created + 2) { candidates += bySecond[second] ?? [] }
             }
@@ -156,7 +158,7 @@ final class DeleteSync: ObservableObject {
     }
 
     /// For background refresh and the Shortcut: a short sync, then a notification if photos
-    /// trashed in Immich are waiting (only when that list changed since the last one).
+    /// trashed in Immich are waiting. At most one per `notifyInterval`, and only when the list changed.
     func runInBackground() async -> String {
         let summary = await run(linkBudget: 20)
         let pending = store.pendingRemoval
@@ -165,7 +167,8 @@ final class DeleteSync: ObservableObject {
         if pending.isEmpty {
             defaults.removeObject(forKey: "notifiedPending")
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.notificationID])
-        } else if defaults.string(forKey: "notifiedPending") != key {
+        } else if defaults.string(forKey: "notifiedPending") != key,
+                  (defaults.object(forKey: "notifiedAt") as? Date ?? .distantPast) < Date().addingTimeInterval(-Self.notifyInterval) {
             let content = UNMutableNotificationContent()
             content.title = "\(pending.count) photo\(pending.count == 1 ? "" : "s") trashed in Immich"
             content.body = "Tap to remove \(pending.count == 1 ? "it" : "them") from this iPhone."
@@ -173,6 +176,7 @@ final class DeleteSync: ObservableObject {
             do {
                 try await UNUserNotificationCenter.current().add(request)
                 defaults.set(key, forKey: "notifiedPending")
+                defaults.set(Date(), forKey: "notifiedAt")
             } catch {
                 SharedLog.write("sync", "notification failed: \(error)")
             }

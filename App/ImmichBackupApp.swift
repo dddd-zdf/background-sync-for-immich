@@ -28,10 +28,12 @@ enum BackgroundSync {
     static func schedule() {
         let request = BGAppRefreshTaskRequest(identifier: identifier)
         request.earliestBeginDate = Date().addingTimeInterval(6 * 3600)
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            SharedLog.write("app", "background refresh not scheduled: \(error)")
+        Task {
+            do {
+                try await BGTaskScheduler.shared.submitTaskRequest(request)
+            } catch {
+                SharedLog.write("app", "background refresh not scheduled: \(error)")
+            }
         }
     }
 }
