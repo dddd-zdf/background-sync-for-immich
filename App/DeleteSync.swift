@@ -5,7 +5,7 @@ import UserNotifications
 /// Two-way delete sync between the iPhone library and Immich. Runs in the app (on open, the Sync
 /// button, background refresh, or the Shortcuts action), never in the extension. Deleting photos
 /// needs iOS's confirmation prompt, which only the app in the foreground can show, so a background
-/// run that finds photos trashed in Immich posts a notification; tapping it shows the prompt.
+/// run that finds photos trashed in Immich plans a notification; tapping it shows the prompt.
 ///
 /// - Deleted on the iPhone -> moved to Immich's trash (automatic up to `autoTrashLimit` at once).
 /// - Trashed in Immich -> listed in `pendingRemoval`; deleted from the iPhone after iOS's prompt.
@@ -21,7 +21,7 @@ final class DeleteSync: ObservableObject {
     @Published private(set) var store = SyncStore.load()
     @Published private(set) var running = false
     @Published private(set) var progress = ""
-    /// Set when the notification is tapped; the app then asks to remove the photos.
+    /// Set when the notification is tapped; the app then goes straight to the delete prompt.
     @Published var removalRequested = false
 
     static let notificationID = "trashed-in-immich"
@@ -47,6 +47,7 @@ final class DeleteSync: ObservableObject {
         store.lastResult = result
         store.save()
         self.store = store
+        await updateAskNotification()
         SharedLog.write("sync", result)
         return result
     }
@@ -155,31 +156,60 @@ final class DeleteSync: ObservableObject {
         return parts.isEmpty ? "In sync." : parts.joined(separator: "; ").capitalizedFirst + "."
     }
 
-    /// For background refresh and the Shortcut: a short sync, then a notification if photos
-    /// trashed in Immich are waiting: at most once per `Settings.remindEveryDays` ("Remind me" in
-    /// the app; 0 = never), repeated while they wait. Silent when nothing is waiting.
+    /// For background refresh and the Shortcut: a short sync (`run` also plans the notification).
     func runInBackground() async -> String {
-        let summary = await run(linkBudget: 20)
-        let pending = store.pendingRemoval
+        await run(linkBudget: 20)
+    }
+
+    /// While photos trashed in Immich wait, keeps one notification planned at the chosen local time,
+    /// at least `Settings.askEveryDays` after the last one (0 = never). Tapping it opens the app
+    /// straight into iOS's delete prompt. Nothing is planned when nothing waits.
+    func updateAskNotification() async {
+        let center = UNUserNotificationCenter.current()
         let defaults = AppGroup.defaults
-        if pending.isEmpty {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.notificationID])
-        } else if Settings.remindEveryDays > 0,
-                  // A few hours' slack so a daily reminder doesn't slip a day when iOS runs it a bit early.
-                  (defaults.object(forKey: "notifiedAt") as? Date ?? .distantPast)
-                    < Date().addingTimeInterval(Double(Settings.remindEveryDays) * -86400 + 4 * 3600) {
-            let content = UNMutableNotificationContent()
-            content.title = "\(pending.count) photo\(pending.count == 1 ? "" : "s") trashed in Immich"
-            content.body = "Tap to remove \(pending.count == 1 ? "it" : "them") from this iPhone."
-            let request = UNNotificationRequest(identifier: Self.notificationID, content: content, trigger: nil)
-            do {
-                try await UNUserNotificationCenter.current().add(request)
-                defaults.set(Date(), forKey: "notifiedAt")
-            } catch {
-                SharedLog.write("sync", "notification failed: \(error)")
-            }
+        let pending = store.pendingRemoval.count
+        var planned = defaults.object(forKey: "askAt") as? Date
+        let now = Date()
+        if let at = planned, at <= now {
+            defaults.set(at, forKey: "lastAsk")  // that one has gone off
+            defaults.removeObject(forKey: "askAt")
+            planned = nil
         }
-        return summary
+        guard pending > 0, Settings.askEveryDays > 0 else {
+            center.removePendingNotificationRequests(withIdentifiers: [Self.notificationID])
+            if pending == 0 { center.removeDeliveredNotifications(withIdentifiers: [Self.notificationID]) }
+            defaults.removeObject(forKey: "askAt")
+            return
+        }
+        let fireAt: Date
+        if let at = planned {
+            fireAt = at  // keep the planned time; just refresh the count
+        } else {
+            let last = defaults.object(forKey: "lastAsk") as? Date
+            // A few hours' slack so a run that's a bit late doesn't push it back a whole cycle.
+            let earliest = max(now, last.map { $0.addingTimeInterval(Double(Settings.askEveryDays) * 86400 - 4 * 3600) } ?? now)
+            fireAt = Calendar.current.nextDate(after: earliest,
+                                                matching: DateComponents(hour: Settings.askHour, minute: Settings.askMinute),
+                                                matchingPolicy: .nextTime) ?? earliest
+        }
+        let content = UNMutableNotificationContent()
+        content.title = "\(pending) photo\(pending == 1 ? "" : "s") trashed in Immich"
+        content.body = "Tap to delete \(pending == 1 ? "it" : "them") from this iPhone."
+        let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireAt)
+        let request = UNNotificationRequest(identifier: Self.notificationID, content: content,
+                                            trigger: UNCalendarNotificationTrigger(dateMatching: parts, repeats: false))
+        do {
+            try await center.add(request)
+            defaults.set(fireAt, forKey: "askAt")
+        } catch {
+            SharedLog.write("sync", "notification not planned: \(error)")
+        }
+    }
+
+    /// New interval or time: plan the next notification from scratch.
+    func replanAskNotification() async {
+        AppGroup.defaults.removeObject(forKey: "askAt")
+        await updateAskNotification()
     }
 
     static func requestNotifications() async {
@@ -206,6 +236,7 @@ final class DeleteSync: ObservableObject {
         for id in ids { store.markGone(id) }
         store.save()
         self.store = store
+        await updateAskNotification()
         let result = "Removed \(ids.count) from the iPhone (in Recently Deleted for 30 days)."
         SharedLog.write("sync", result)
         return result

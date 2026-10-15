@@ -28,10 +28,21 @@ enum Settings {
         set { d.set(newValue, forKey: "wifiOnly") }
     }
 
-    /// Days between "trashed in Immich" reminders; 0 = never (check in the app).
-    static var remindEveryDays: Int {
-        get { d.object(forKey: "remindEveryDays") as? Int ?? 1 }
-        set { d.set(newValue, forKey: "remindEveryDays") }
+    /// Days between "ask to delete" notifications while photos trashed in Immich wait; 0 = never.
+    static var askEveryDays: Int {
+        get { d.object(forKey: "askEveryDays") as? Int ?? 7 }
+        set { d.set(newValue, forKey: "askEveryDays") }
+    }
+
+    /// Local time of day for that notification (device time zone).
+    static var askHour: Int {
+        get { d.object(forKey: "askHour") as? Int ?? 19 }
+        set { d.set(newValue, forKey: "askHour") }
+    }
+
+    static var askMinute: Int {
+        get { d.integer(forKey: "askMinute") }
+        set { d.set(newValue, forKey: "askMinute") }
     }
 
     /// One-shot request from the app: forget failures so those assets are tried again.

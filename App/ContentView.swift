@@ -16,7 +16,9 @@ struct ContentView: View {
     @State private var waiting: Int?
     @ObservedObject private var sync = DeleteSync.shared
     @State private var syncMessage = ""
-    @State private var remindEvery = Settings.remindEveryDays
+    @State private var askEvery = Settings.askEveryDays
+    @State private var askTime = Calendar.current.date(
+        from: DateComponents(hour: Settings.askHour, minute: Settings.askMinute)) ?? Date()
 
     var body: some View {
         NavigationStack {
@@ -64,17 +66,27 @@ struct ContentView: View {
                         Text("Held back because more than \(DeleteSync.autoTrashLimit) disappeared at once: " + Self.names(sync.store.heldTrash))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
-                    Picker("Remind me to remove", selection: Binding(
-                        get: { remindEvery },
+                    Picker("Ask to delete", selection: Binding(
+                        get: { askEvery },
                         set: { days in
-                            remindEvery = days
-                            Settings.remindEveryDays = days
-                            SharedLog.write("app", "remind every \(days) days")
+                            askEvery = days
+                            Settings.askEveryDays = days
+                            SharedLog.write("app", "ask to delete every \(days) days")
+                            Task { await sync.replanAskNotification() }
                         })) {
-                        Text("Every day").tag(1)
-                        Text("Every 3 days").tag(3)
-                        Text("Weekly").tag(7)
                         Text("Never").tag(0)
+                        ForEach(1...30, id: \.self) { Text($0 == 1 ? "Every day" : "Every \($0) days").tag($0) }
+                    }
+                    if askEvery > 0 {
+                        DatePicker("At", selection: Binding(
+                            get: { askTime },
+                            set: { time in
+                                askTime = time
+                                let parts = Calendar.current.dateComponents([.hour, .minute], from: time)
+                                Settings.askHour = parts.hour ?? 19
+                                Settings.askMinute = parts.minute ?? 0
+                                Task { await sync.replanAskNotification() }
+                            }), displayedComponents: .hourAndMinute)
                     }
                     Button("Sync now") { Task { syncMessage = await sync.run(linkBudget: nil); refresh() } }
                         .disabled(sync.running)
@@ -85,7 +97,8 @@ struct ContentView: View {
                     Text("""
                     Deleted on this iPhone: moved to Immich's trash. Trashed in Immich: removed from this iPhone after \
                     iOS asks you (then in Recently Deleted for 30 days). Older photos are linked by file name or time \
-                    and a SHA1 check of the file. To run it on a schedule: Shortcuts > Automation > New > Time of Day \
+                    and a SHA1 check of the file. "Ask to delete" sends a notification at that time only when photos \
+                    are waiting; tapping it goes straight to the delete prompt. For a dependable daily check: Shortcuts > Automation > New > Time of Day \
                     (or Charger) > "Sync Immich deletions" > Run Immediately.
                     """)
                 }
