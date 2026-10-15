@@ -14,6 +14,8 @@ struct ContentView: View {
     @State private var wifiOnly = Settings.wifiOnly
     @State private var snapshot = Diagnostics.Snapshot()
     @State private var waiting: Int?
+    @ObservedObject private var sync = DeleteSync.shared
+    @State private var syncMessage = ""
 
     var body: some View {
         NavigationStack {
@@ -36,6 +38,43 @@ struct ContentView: View {
                     if !extensionEnabled {
                         Text("The upload extension is off, so nothing uploads.").font(.footnote).foregroundStyle(.red)
                     }
+                }
+
+                Section {
+                    LabeledContent("Last sync", value: sync.store.lastSync?.formatted(date: .abbreviated, time: .shortened) ?? "never")
+                    LabeledContent("Linked to Immich", value: "\(Set(snapshot.state.uploaded.keys).union(sync.store.links.keys).subtracting(sync.store.gone).count)")
+                    if sync.running {
+                        HStack { ProgressView(); Text(sync.progress).font(.footnote) }
+                    } else if !sync.store.lastResult.isEmpty {
+                        Text(sync.store.lastResult).font(.footnote)
+                    }
+                    if !sync.store.pendingRemoval.isEmpty {
+                        Button("Remove \(sync.store.pendingRemoval.count) trashed in Immich from iPhone", role: .destructive) {
+                            Task { syncMessage = await sync.removePendingFromPhone(); refresh() }
+                        }
+                        .disabled(sync.running)
+                        Text(Self.names(sync.store.pendingRemoval)).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    if !sync.store.heldTrash.isEmpty {
+                        Button("Move \(sync.store.heldTrash.count) gone from iPhone to Immich's trash", role: .destructive) {
+                            Task { syncMessage = await sync.trashHeld(); refresh() }
+                        }
+                        .disabled(sync.running)
+                        Text("Held back because more than \(DeleteSync.autoTrashLimit) disappeared at once: " + Self.names(sync.store.heldTrash))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Button("Sync now") { Task { syncMessage = await sync.run(linkBudget: nil); refresh() } }
+                        .disabled(sync.running)
+                    if !syncMessage.isEmpty { Text(syncMessage).font(.footnote) }
+                } header: {
+                    Text("Two-way sync")
+                } footer: {
+                    Text("""
+                    Deleted on this iPhone: moved to Immich's trash. Trashed in Immich: removed from this iPhone after \
+                    iOS asks you (then in Recently Deleted for 30 days). Older photos are linked by file name or time \
+                    and a SHA1 check of the file. To run it on a schedule: Shortcuts > Automation > New > Time of Day \
+                    (or Charger) > "Sync Immich deletions" > Run Immediately.
+                    """)
                 }
 
                 Section {
@@ -85,7 +124,7 @@ struct ContentView: View {
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("API key permissions: asset.upload, user.read, plus asset.copy and asset.delete (used to replace edited photos).")
+                    Text("API key permissions: asset.upload, asset.read, asset.copy, asset.delete and user.read.")
                 }
 
                 Section {
@@ -125,8 +164,12 @@ struct ContentView: View {
             }
             .navigationTitle("Immich Backup")
             .refreshable { refresh() }
-            .onAppear(perform: refresh)
-            .onChange(of: scenePhase) { _, phase in if phase == .active { refresh() } }
+            .onAppear { refresh(); autoSync() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { refresh(); autoSync(); removeIfRequested() }
+            }
+            .onChange(of: sync.removalRequested) { _, _ in removeIfRequested() }
+            .task { await DeleteSync.requestNotifications() }
         }
     }
 
@@ -134,11 +177,31 @@ struct ContentView: View {
         photosStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         extensionEnabled = PHPhotoLibrary.shared().uploadJobExtensionEnabled
         snapshot = Diagnostics.Snapshot()
+        sync.reload()
         let state = snapshot.state
         Task.detached(priority: .utility) {
             let count = Diagnostics.waitingCount(state)
             await MainActor.run { waiting = count }
         }
+    }
+
+    /// From the notification: iOS's delete prompt needs the app in the foreground.
+    private func removeIfRequested() {
+        guard sync.removalRequested, scenePhase == .active else { return }
+        sync.removalRequested = false
+        Task { syncMessage = await sync.removePendingFromPhone(); refresh() }
+    }
+
+    /// Syncs on open, at most every 15 minutes.
+    private func autoSync() {
+        guard !sync.running, !sync.removalRequested, photosStatus == .authorized, !Settings.apiKey.isEmpty,
+              (sync.store.lastSync ?? .distantPast) < Date().addingTimeInterval(-900) else { return }
+        Task { await sync.run(linkBudget: nil); refresh() }
+    }
+
+    private static func names(_ items: [String: SyncStore.Pending]) -> String {
+        let names = items.values.map(\.file).sorted()
+        return names.prefix(8).joined(separator: ", ") + (names.count > 8 ? " and \(names.count - 8) more" : "")
     }
 
     private func retryFailed() {

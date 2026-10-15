@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0 (2026-10-15): two-way delete sync
+
+- Deleted on the iPhone -> moved to Immich's trash (Live Photo videos too). More than 25 at once
+  wait for a tap in the app (guards against Photos access loss looking like mass deletion).
+- Trashed in Immich -> removed from the iPhone after iOS's own "Allow deleting?" prompt (every
+  delete needs it; apps can't skip it). The photos then sit in Recently Deleted for 30 days.
+- The whole library is linked to Immich, not just this app's uploads: a photo with the same file
+  name or capture time (within 2 s) is a candidate, and it's linked only if the SHA1 of its bytes
+  equals Immich's checksum. Linked library photos also get edit replacement.
+- Runs on app open (at most every 15 min), "Sync now", iOS background refresh, and a Shortcuts
+  action "Sync Immich deletions" (for a daily automation). Background runs post a notification
+  when photos trashed in Immich are waiting; tapping it shows the delete prompt.
+- Who must act: the user installs the IPA, adds `asset.read` to the Immich API key (search), allows
+  notifications, and optionally sets up the Shortcuts automation. Cairn can be uninstalled
+  (this covers iPhone -> Immich deletes; running both is harmless).
+
 ## 0.2.0 (2026-10-15): full uploader
 
 - Live Photos: the video uploads first, then the photo with its Immich ID, so Immich pairs them.

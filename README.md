@@ -31,7 +31,7 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
 2. Install it with the patched SideStore (below); official SideStore can't sign the extension.
    Updating over an existing install keeps settings and upload state.
 3. In the app: server URL and API key (Immich: Account settings > API keys, permissions
-   `asset.upload`, `user.read`, `asset.copy`, `asset.delete`; the last two replace edited photos),
+   `asset.upload`, `asset.read`, `asset.copy`, `asset.delete`, `user.read`),
    full Photos access, turn on the extension, then "Back up automatically" (covers photos taken from
    that moment on; set "Photos taken since" earlier to upload older ones).
 
@@ -52,6 +52,24 @@ reach Immich about 2 minutes after they're taken, with the app closed and after 
 - `state.json` in the app group (written only by the extension; the app asks for changes through
   settings flags): `uploaded` (Photos ID -> Immich ID, for later two-way sync), `liveVideos`,
   `versions`, `replacing`, `inflight`, `failed`.
+
+## Two-way delete sync
+
+Runs in the app, not the extension (`App/DeleteSync.swift`): on open, "Sync now", background
+refresh, and the Shortcuts action "Sync Immich deletions" (Shortcuts > Automation > Time of Day >
+Run Immediately). State is `sync.json` in the app group, written only by the app.
+
+1. Reads every Immich asset (`POST /api/search/metadata`, timeline + archive, trashed included).
+2. Deleted on the iPhone (tracked photo no longer in Photos) -> `DELETE /api/assets` (trash), with
+   the Live Photo video (Immich doesn't cascade). Over 25 at once waits for a tap.
+3. Links library photos the app didn't upload: same name (any extension) or capture time +-2 s as
+   candidates, then SHA1 of the current (else original) bytes must equal Immich's `checksum`.
+   No candidate or no hash match -> `unmatched`, rechecked only if the photo changes.
+4. Trashed in Immich -> `pendingRemoval`. Background runs post a notification; the delete needs
+   iOS's prompt, so it happens when the app is in front (notification tap or the button).
+
+A photo whose edit is still being replaced, or with a job in flight, is skipped that run, so the
+edit replace (which trashes the old Immich asset) never deletes the iPhone photo.
 
 ## How iOS runs the extension
 

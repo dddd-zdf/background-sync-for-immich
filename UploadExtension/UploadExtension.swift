@@ -1,4 +1,3 @@
-import CryptoKit
 import ExtensionFoundation
 import Foundation
 import Photos
@@ -12,6 +11,8 @@ import UniformTypeIdentifiers
 @main
 final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     private let cancelled = Flag()
+    /// The app's links to photos that reached Immich another way (read-only here).
+    private var sync = SyncStore()
 
     required init() {
         SharedLog.write("ext", "init, app group \(AppGroup.identifier), container \(AppGroup.container != nil ? "ok" : "MISSING")")
@@ -24,6 +25,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         Settings.invocationCount += 1
         SharedLog.write("ext", "processJobs #\(Settings.invocationCount) start")
         var state = UploadState.load()
+        sync = SyncStore.load()
         defer { state.save() }
         do {
             try acknowledgeFinishedJobs(&state)
@@ -132,42 +134,28 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             if cancelled.value { complete = false; break }
             let asset = result.object(at: i)
             let id = asset.localIdentifier
-            guard state.uploaded[id] != nil, let modified = asset.modificationDate else { continue }
-            if let known = state.versions[id], modified <= known.modified { continue }
-            guard let fingerprint = await editFingerprint(of: asset) else { complete = false; continue }
-            guard let known = state.versions[id], known.fingerprint != "unknown" else {
+            guard let current = sync.immichID(for: id, state), state.replacing[id] == nil,
+                  let modified = asset.modificationDate else { continue }
+            let recorded = state.uploaded[id] != nil ? state.versions[id] : sync.links[id]?.version
+            if let recorded, modified <= recorded.modified { continue }
+            guard let fingerprint = await AssetHashing.editFingerprint(of: asset) else { complete = false; continue }
+            guard let known = recorded, known.fingerprint != "unknown" else {
                 // Uploaded before versions were recorded: take what's there now as the baseline.
                 state.versions[id] = .init(modified: modified, fingerprint: fingerprint)
                 continue
             }
             if fingerprint == known.fingerprint {
-                state.versions[id]?.modified = modified
+                state.versions[id] = .init(modified: modified, fingerprint: fingerprint)
                 continue
             }
-            state.replacing[id] = state.uploaded.removeValue(forKey: id)
+            state.replacing[id] = current
+            state.uploaded[id] = nil
             state.liveVideos[id] = nil
             state.failed[id] = nil
             state.note("edited \(id), will replace \(state.replacing[id] ?? "?")")
             SharedLog.write("ext", "edit found: \(id)")
         }
         if complete { state.editsCheckedUntil = scanStart }
-    }
-
-    /// "original" when the asset has no edits, else a hash of its adjustment data. nil if unreadable.
-    private func editFingerprint(of asset: PHAsset) async -> String? {
-        guard let adjustment = PHAssetResource.assetResources(for: asset).first(where: { $0.type == .adjustmentData }) else {
-            return "original"
-        }
-        let options = PHAssetResourceRequestOptions()
-        options.isNetworkAccessAllowed = true
-        let buffer = DataBox()
-        let ok: Bool = await withCheckedContinuation { continuation in
-            _ = PHAssetResourceManager.default().requestData(for: adjustment, options: options,
-                dataReceivedHandler: { buffer.append($0) },
-                completionHandler: { continuation.resume(returning: $0 == nil) })
-        }
-        guard ok else { return nil }
-        return SHA256.hash(data: buffer.data).prefix(12).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: - New jobs
@@ -189,7 +177,8 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         func addNeeded(_ result: PHFetchResult<PHAsset>) {
             for i in 0..<result.count where assets.count < slots {
                 let id = result.object(at: i).localIdentifier
-                if (state.uploaded[id] == nil || state.requested.contains(id)) && !state.gaveUp(on: id) {
+                let needed = sync.immichID(for: id, state) == nil || state.replacing[id] != nil || state.requested.contains(id)
+                if needed && !state.gaveUp(on: id) {
                     add(result.object(at: i))
                 }
             }
@@ -308,7 +297,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             request.setValue(state.replacing[id], forHTTPHeaderField: Header.replace)
             // Read back on acknowledge to record which version was uploaded (edit detection).
             request.setValue(String(modified.timeIntervalSince1970), forHTTPHeaderField: Header.modified)
-            request.setValue(await editFingerprint(of: asset) ?? "unknown", forHTTPHeaderField: Header.fingerprint)
+            request.setValue(await AssetHashing.editFingerprint(of: asset) ?? "unknown", forHTTPHeaderField: Header.fingerprint)
         }
         return request
     }
@@ -344,11 +333,4 @@ final class Flag: @unchecked Sendable {
         get { lock.withLock { _value } }
         set { lock.withLock { _value = newValue } }
     }
-}
-
-final class DataBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _data = Data()
-    var data: Data { lock.withLock { _data } }
-    func append(_ chunk: Data) { lock.withLock { _data.append(chunk) } }
 }
