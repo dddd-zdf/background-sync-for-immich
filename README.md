@@ -41,6 +41,8 @@ reach Immich about 2 minutes after they're taken, with the app closed and after 
 0.2.0 verified the same day: Live Photos arrive paired (video hidden, plays in Immich) and videos arrive.
 0.3.0 verified the same day: all 403 photos on the iPhone linked to Immich; trashing in Immich, then tapping
 the notification, deleted them from the iPhone after the iOS prompt.
+0.4.1 verified the same day: photos deleted on the iPhone (3 Live Photos and a video) went to Immich's
+trash on the next sync, Live Photo videos included.
 
 ## What gets uploaded
 
