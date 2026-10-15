@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 (2026-10-15): renamed to Immich Sync
+
+- The app is now called Immich Sync (home screen, titles, Photos permission text); status reads
+  "In sync" / "Syncing" / "Sync is off". Settings sections are "Upload" and "Deletes".
+- The CI artifact is now `ImmichSync-<version>.ipa`. Bundle IDs, app group and repo name unchanged,
+  so it installs over the old app and keeps everything.
+- Who must act: the user installs the IPA (optional).
+
 ## 0.4.0 (2026-10-15): new look
 
 - App icon: the Immich pinwheel with an indigo two-way sync badge (`design/app-icon.svg`; for

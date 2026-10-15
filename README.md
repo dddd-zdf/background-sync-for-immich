@@ -1,8 +1,9 @@
-# Immich Backup
+# Immich Sync
 
-iCloud-style background backup from an iPhone to Immich. It uses the iOS 27 PhotoKit
-background upload extension, which iOS runs on its own schedule whether or not the
-app is open. The official Immich app stays the viewer; turn its own backup off.
+Keeps an iPhone's photo library and Immich in sync in the background: new photos upload on
+their own (iOS 27 PhotoKit background upload extension, which iOS runs whether or not the app is
+open), edits replace the old version, and deletions sync both ways. The official Immich app
+stays the viewer; turn its own backup off. (Repo and bundle IDs keep the old name, Immich Backup.)
 
 ```
 iPhone: PhotoKit runs UploadExtension -> raw POST /api/assets/background
@@ -27,7 +28,7 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
 
 ## Build and install
 
-1. Push to `main` (or run the "iOS build" workflow). The `ipa-N` artifact has `ImmichBackup-<version>.ipa`.
+1. Push to `main` (or run the "iOS build" workflow). The `ipa-N` artifact has `ImmichSync-<version>.ipa`.
 2. Install it with the patched SideStore (below); official SideStore can't sign the extension.
    Updating over an existing install keeps settings and upload state.
 3. In the app: server URL and API key (Immich: Account settings > API keys, permissions

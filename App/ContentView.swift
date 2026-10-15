@@ -1,7 +1,7 @@
 import Photos
 import SwiftUI
 
-/// Home screen: is everything backed up, and is anything waiting for me. Everything else is in Settings.
+/// Home screen: is everything in sync, and is anything waiting for me. Everything else is in Settings.
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var model = AppModel.shared
@@ -81,7 +81,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("Backup")
+            .navigationTitle("Immich Sync")
             .toolbar {
                 NavigationLink {
                     SettingsView()
@@ -160,7 +160,7 @@ struct ContentView: View {
     }
 }
 
-/// The big "Backed up" / "Uploading" header.
+/// The big "In sync" / "Syncing" header.
 private struct StatusHeader: View {
     @ObservedObject var model: AppModel
     let syncing: Bool
@@ -196,14 +196,14 @@ private struct StatusHeader: View {
     }
 
     private var title: String {
-        if off { return "Backup is off" }
-        if !state.inflight.isEmpty { return "Uploading \(state.inflight.count)" }
-        if let waiting = model.waiting, waiting > 0 { return "\(waiting) waiting" }
-        return "Backed up"
+        if off { return "Sync is off" }
+        if !state.inflight.isEmpty { return "Syncing \(state.inflight.count)" }
+        if let waiting = model.waiting, waiting > 0 { return "\(waiting) to upload" }
+        return "In sync"
     }
 
     private var subtitle: String {
-        if off && !model.autoOn { return "Turn on automatic backup in Settings." }
+        if off && !model.autoOn { return "Turn on Upload new photos in Settings." }
         guard let last = state.lastUpload else { return "Nothing uploaded yet." }
         return "Last upload \(ContentView.relative(last))"
     }

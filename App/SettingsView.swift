@@ -20,7 +20,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Back up automatically", isOn: Binding(
+                Toggle("Upload new photos", isOn: Binding(
                     get: { autoOn },
                     set: { on in
                         autoOn = on
@@ -47,9 +47,9 @@ struct SettingsView: View {
                         SharedLog.write("app", "wifi only \(on)")
                     }))
             } header: {
-                Text("Backup")
+                Text("Upload")
             } footer: {
-                Text("An earlier date also backs up older photos. Immich skips ones it already has, but each is still sent in full, so a big backlog uses a lot of data. Edited photos replace their old version in Immich.")
+                Text("An earlier date also uploads older photos. Immich skips ones it already has, but each is still sent in full, so a big backlog uses a lot of data. Edited photos replace their old version in Immich.")
             }
 
             Section {
@@ -100,7 +100,7 @@ struct SettingsView: View {
                 }
                 .disabled(sync.running)
             } header: {
-                Text("Two-way sync")
+                Text("Deletes")
             } footer: {
                 Text("""
                 Deleted on this iPhone goes to Immich's trash. Trashed in Immich gets a notification while it waits \
