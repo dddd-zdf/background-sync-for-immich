@@ -16,7 +16,9 @@ struct ContentView: View {
     @State private var waiting: Int?
     @ObservedObject private var sync = DeleteSync.shared
     @State private var syncMessage = ""
+    @State private var askOn = Settings.askEnabled
     @State private var askEvery = Settings.askEveryDays
+    @FocusState private var daysFocused: Bool
     @State private var askTime = Calendar.current.date(
         from: DateComponents(hour: Settings.askHour, minute: Settings.askMinute)) ?? Date()
 
@@ -66,18 +68,32 @@ struct ContentView: View {
                         Text("Held back because more than \(DeleteSync.autoTrashLimit) disappeared at once: " + Self.names(sync.store.heldTrash))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
-                    Picker("Ask to delete", selection: Binding(
-                        get: { askEvery },
-                        set: { days in
-                            askEvery = days
-                            Settings.askEveryDays = days
-                            SharedLog.write("app", "ask to delete every \(days) days")
+                    Toggle("Ask to delete", isOn: Binding(
+                        get: { askOn },
+                        set: { on in
+                            askOn = on
+                            Settings.askEnabled = on
+                            SharedLog.write("app", "ask to delete \(on ? "on" : "off")")
                             Task { await sync.replanAskNotification() }
-                        })) {
-                        Text("Never").tag(0)
-                        ForEach(1...30, id: \.self) { Text($0 == 1 ? "Every day" : "Every \($0) days").tag($0) }
-                    }
-                    if askEvery > 0 {
+                        }))
+                    if askOn {
+                        HStack {
+                            Text("Every")
+                            Spacer()
+                            TextField("7", value: $askEvery, format: .number)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 60)
+                                .focused($daysFocused)
+                            Text(askEvery == 1 ? "day" : "days")
+                        }
+                        .onChange(of: askEvery) { _, days in
+                            let clamped = min(max(days, 1), 365)
+                            if clamped != days { askEvery = clamped; return }
+                            Settings.askEveryDays = clamped
+                            SharedLog.write("app", "ask to delete every \(clamped) days")
+                            Task { await sync.replanAskNotification() }
+                        }
                         DatePicker("At", selection: Binding(
                             get: { askTime },
                             set: { time in
@@ -189,6 +205,13 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Immich Backup")
+            .toolbar {
+                // The number pad has no return key.
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { daysFocused = false }
+                }
+            }
             .refreshable { refresh() }
             .onAppear { refresh(); autoSync() }
             .onChange(of: scenePhase) { _, phase in

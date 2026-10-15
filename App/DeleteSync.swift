@@ -162,7 +162,7 @@ final class DeleteSync: ObservableObject {
     }
 
     /// While photos trashed in Immich wait, keeps one notification planned at the chosen local time,
-    /// at least `Settings.askEveryDays` after the last one (0 = never). Tapping it opens the app
+    /// at least `Settings.askEveryDays` after the last one (if `askEnabled`). Tapping it opens the app
     /// straight into iOS's delete prompt. Nothing is planned when nothing waits.
     func updateAskNotification() async {
         let center = UNUserNotificationCenter.current()
@@ -175,7 +175,7 @@ final class DeleteSync: ObservableObject {
             defaults.removeObject(forKey: "askAt")
             planned = nil
         }
-        guard pending > 0, Settings.askEveryDays > 0 else {
+        guard pending > 0, Settings.askEnabled else {
             center.removePendingNotificationRequests(withIdentifiers: [Self.notificationID])
             if pending == 0 { center.removeDeliveredNotifications(withIdentifiers: [Self.notificationID]) }
             defaults.removeObject(forKey: "askAt")
@@ -187,7 +187,7 @@ final class DeleteSync: ObservableObject {
         } else {
             let last = defaults.object(forKey: "lastAsk") as? Date
             // A few hours' slack so a run that's a bit late doesn't push it back a whole cycle.
-            let earliest = max(now, last.map { $0.addingTimeInterval(Double(Settings.askEveryDays) * 86400 - 4 * 3600) } ?? now)
+            let earliest = max(now, last.map { $0.addingTimeInterval(Double(max(Settings.askEveryDays, 1)) * 86400 - 4 * 3600) } ?? now)
             fireAt = Calendar.current.nextDate(after: earliest,
                                                 matching: DateComponents(hour: Settings.askHour, minute: Settings.askMinute),
                                                 matchingPolicy: .nextTime) ?? earliest

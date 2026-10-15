@@ -28,7 +28,13 @@ enum Settings {
         set { d.set(newValue, forKey: "wifiOnly") }
     }
 
-    /// Days between "ask to delete" notifications while photos trashed in Immich wait; 0 = never.
+    /// Notify while photos trashed in Immich wait to be deleted from the iPhone.
+    static var askEnabled: Bool {
+        get { d.object(forKey: "askEnabled") as? Bool ?? true }
+        set { d.set(newValue, forKey: "askEnabled") }
+    }
+
+    /// Days between those notifications (1-365).
     static var askEveryDays: Int {
         get { d.object(forKey: "askEveryDays") as? Int ?? 7 }
         set { d.set(newValue, forKey: "askEveryDays") }
