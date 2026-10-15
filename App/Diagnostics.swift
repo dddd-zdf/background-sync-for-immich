@@ -29,7 +29,7 @@ enum Diagnostics {
     /// Excludes ones that gave up.
     static func waitingCount(_ state: UploadState) -> Int {
         let busy = Set(state.inflight.values)
-        var count = state.replacing.keys.filter { !busy.contains($0) && !state.gaveUp(on: $0) }.count
+        let count = state.replacing.keys.filter { !busy.contains($0) && !state.gaveUp(on: $0) }.count
         guard let since = Settings.autoSince else { return count }
         let sync = SyncStore.load()
         func needed(_ id: String) -> Bool {
