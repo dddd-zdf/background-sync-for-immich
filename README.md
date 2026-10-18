@@ -1,155 +1,147 @@
-# Immich Sync
+# Immich Sync for iPhone
 
-Keeps an iPhone's photo library and Immich in sync in the background: new photos upload on
-their own (iOS 27 PhotoKit background upload extension, which iOS runs whether or not the app is
-open), edits replace the old version, and deletions sync both ways. The official Immich app
-stays the viewer; turn its own backup off. (Repo and bundle IDs keep the old name, Immich Backup.)
+Two-way sync between your iPhone's Photos library and your own [Immich](https://immich.app) server,
+running in the background even when the app is closed.
+
+- **New photos upload on their own**, usually within a couple of minutes, using the iOS 27 PhotoKit
+  background upload extension. iOS runs it whether or not the app is open, even after a force-quit.
+- **Edits sync.** Edit a photo in Photos and Immich gets the new version, with the untouched original
+  stacked under it (or just the latest edit, your choice). Revert in Photos and Immich reverts too.
+- **Deletes sync both ways.** Delete on the iPhone and it goes to Immich's trash. Trash it in Immich
+  and it's deleted from the iPhone (after iOS's prompt, or fully automatic with a Shortcut).
+- **Live Photos** arrive paired, **videos** too. Albums, favorites and shared links survive edits.
+- **Already using the Immich app?** Your existing library is matched by checksum, so nothing uploads twice.
+
+Keep the official Immich app for browsing; turn its own backup off.
+
+> **Status:** works daily for the author. It is a sideloaded app (not on the App Store) and
+> needs a small proxy next to your Immich server. Read the requirements before you start.
+
+## Requirements
+
+- iPhone on **iOS 27** or later.
+- An **Immich** server reachable over HTTPS from wherever your iPhone is (tested with Immich v3.3).
+- A place to run one small Docker container next to Immich (the upload proxy, below).
+- A computer for sideloading once: **SideStore** with a free Apple account works.
+  The app has an ExtensionKit extension that official SideStore can't sign yet, so use the
+  [patched SideStore](https://github.com/dddd-zdf/sidestore-extfix/releases) until the fix is upstream.
+
+## 1. Run the upload proxy
+
+PhotoKit can only send a photo as a raw file; Immich only accepts multipart uploads. The proxy
+converts one into the other. It stores nothing and has no keys of its own: every request carries your
+Immich API key.
+
+Add it to your Immich `docker-compose.yml`:
+
+```yaml
+  immich-sync-proxy:
+    image: ghcr.io/dddd-zdf/immich-sync-proxy:latest
+    restart: unless-stopped
+    environment:
+      LISTEN_ADDR: 0.0.0.0:2284
+      IMMICH_URL: http://immich-server:2283
+    ports:
+      - 127.0.0.1:2284:2284
+```
+
+Then send **one path** of your Immich site to it in your reverse proxy, everything else stays as is.
+
+Caddy:
 
 ```
-iPhone: PhotoKit runs UploadExtension -> raw POST /api/assets/background
-  -> Caddy on home -> immich-backup-proxy (127.0.0.1:2284) -> multipart POST /api/assets -> Immich
+photos.example.com {
+    reverse_proxy /api/assets/background 127.0.0.1:2284
+    reverse_proxy 127.0.0.1:2283
+}
 ```
 
-- `App/`: SwiftUI host app (settings, enable the extension, status, log).
-- `UploadExtension/`: PhotoKit extension; queues upload jobs, records results.
-- `Shared/`: app group lookup, settings, log, upload state (both targets).
-- `proxy/`: Go service; PhotoKit can only send the raw file, Immich only takes multipart.
-- `project.yml`: XcodeGen spec. No Mac needed: CI (`xcode-27` runner) builds unsigned IPAs.
+nginx (inside your Immich `server` block):
 
-## Fixed identifiers (do not change)
+```nginx
+location = /api/assets/background {
+    proxy_pass http://127.0.0.1:2284;
+    client_max_body_size 0;
+    proxy_request_buffering off;
+    proxy_read_timeout 600s;
+}
+```
 
-Free Apple account: every new bundle ID costs an App ID (10 per week).
+Check: `curl http://127.0.0.1:2284/health` answers `ok`.
 
-| What | ID |
-|---|---|
-| App | `com.difei.immichbackup` |
-| Extension | `com.difei.immichbackup.upload` |
-| App group | `group.com.difei.immichbackup` (SideStore renames it `...<TEAMID>`; the app reads the real one from `embedded.mobileprovision`) |
+## 2. Install the app
 
-## Build and install
+1. Install the [patched SideStore](https://github.com/dddd-zdf/sidestore-extfix/releases) (same steps as
+   regular SideStore).
+2. Download `ImmichSync-<version>.ipa` from [Releases](../../releases) and open it in SideStore.
+   Updating later the same way keeps your settings.
 
-1. Push to `main` (or run the "iOS build" workflow). The `ipa-N` artifact has `ImmichSync-<version>.ipa`.
-2. Install it with the patched SideStore (below); official SideStore can't sign the extension.
-   Updating over an existing install keeps settings and upload state.
-3. In the app: server URL and API key (Immich: Account settings > API keys, permissions
-   `asset.upload`, `asset.read`, `asset.copy`, `asset.delete`, `user.read`, `stack.create`, `stack.read`,
-   `stack.delete`),
-   full Photos access, turn on the extension, then "Upload new photos". Anything on the iPhone that
-   isn't in Immich uploads: new photos right away, older ones once the library check finds them missing.
+Free Apple accounts must refresh sideloaded apps every 7 days; SideStore does this for you.
 
-Verified 2026-10-15 on the author's iPhone (iOS 27, free account, SideStore 0.7.0-extfix.2): photos
-reach Immich about 2 minutes after they're taken, with the app closed and after a force-quit.
-0.2.0 verified the same day: Live Photos arrive paired (video hidden, plays in Immich) and videos arrive.
-0.3.0 verified the same day: all 403 photos on the iPhone linked to Immich; trashing in Immich, then tapping
-the notification, deleted them from the iPhone after the iOS prompt.
-0.4.1 verified the same day: photos deleted on the iPhone (3 Live Photos and a video) went to Immich's
-trash on the next sync, Live Photo videos included.
+## 3. Set it up
 
-## What gets uploaded
+1. In Immich: **Account settings > API keys > New API key** with these permissions:
+   `asset.upload`, `asset.read`, `asset.copy`, `asset.delete`, `user.read`,
+   `stack.create`, `stack.read`, `stack.delete`.
+2. In the app: **Settings > Immich server**: your server URL (e.g. `https://photos.example.com`) and
+   the key, then **Save and check**.
+3. Allow **full Photos access** and turn on **Background upload**.
+4. Turn on **Upload new photos**.
 
-- Each job uploads one file: the version you see in Photos (the edited render if any, named like the
-  original, e.g. `IMG_1234.jpg`). Up to 20 jobs at once; photos from the last day first, then newer
-  ones since upload was turned on, then older ones the library check marked as not in Immich. A file that fails 3 times waits for "Retry all".
-- Live Photos: two jobs in sequence. The video goes first; once its job is acknowledged with an
-  Immich ID, the still goes with `X-Live-Photo-Video-Id`, which Immich uses to pair them.
-- Edits (0.6.0): an edited photo is one stack in Immich, the edit on top and the untouched original
-  under it, like Photos. The original goes first (Live Photos: its video, then the still), then the
-  render with `X-Stack-Original-Id`. Edit detection: when an asset's modification date moves, the
-  extension compares a hash of its adjustment data with the one recorded at upload.
-  - First edit of a photo that reached Immich unedited: what Immich has is the original; only the
-    render uploads, and gets the original's albums.
-  - Later edits: the new render goes on top (`X-Replace-Asset-Id` = the previous render: its albums,
-    shared links and sidecar move over, its stack is removed, it is trashed). The original stays.
-  - Revert in Photos: no upload. The extension removes the stack, copies the render's albums and
-    favorite to the original and trashes the render.
-  - Photos edited before 0.6.0 (or before the photo first uploaded under 0.5.x) are a single render
-    in Immich until Advanced > "Keep originals of edited photos" queues them like a new edit.
-    Immich matches anything it already has by checksum, so only what's missing is stored. An original
-    matched to a trashed asset is restored from Immich's trash (`X-Immich-Restored`).
-  - Anything with a full-size render counts as edited, including Portrait photos straight from the camera.
-- `state.json` in the app group (written only by the extension; the app asks for changes through
-  settings flags): `uploaded` (Photos ID -> Immich ID, for later two-way sync), `liveVideos`,
-  `versions`, `replacing`, `originals` and `originalVideos` (edited photos), `inflight`, `failed`.
+The app then matches your library with what's already in Immich and uploads whatever is missing.
 
-## Two-way delete sync
+## Settings
 
-Runs in the app (`App/DeleteSync.swift`): on open, pull to refresh, and the Shortcuts action "Sync
-Immich deletions" (Shortcuts > Automation > Time of Day > Run Immediately; the only way to run it
-with the app swiped away). The upload extension also trashes iPhone deletions itself, but iOS only
-wakes it for new photos, not deletions (tested 2026-10-15). The Shortcuts action also stages
-photos trashed in Immich in a "Trashed in Immich" album, so an automation can delete them unprompted
-(Find Photos by album > Delete Photos, with Shortcuts' Allow Deleting Without Confirmation). State is `sync.json` in the app group,
-written only by the app; the extension's trashes are in `UploadState.trashed`.
+| Setting | What it does | Default |
+|---|---|---|
+| Upload new photos | Background upload on/off | off until you turn it on |
+| Wi-Fi only | No uploads over cellular | off |
+| Videos / Screenshots | Upload these too | on / on |
+| Older photos | Also upload photos from before you turned upload on that Immich doesn't have | on |
+| Edited photos | **Keep the original under the edit** (an Immich stack, like Photos), **Latest edit only**, or **Don't sync edits** | keep the original |
+| Deleted on iPhone: trash in Immich | One direction of delete sync | on |
+| Ask first if over N | More deletes than this at once wait for your tap (protects against a lost Photos permission looking like a mass delete) | 25 |
+| Trashed in Immich: delete from iPhone | The other direction | on |
+| Ask to delete | A reminder notification while photos trashed in Immich wait to be deleted from the iPhone | weekly, 19:00 |
 
-1. Reads every Immich asset (`POST /api/search/metadata`, timeline + archive, trashed included).
-2. Deleted on the iPhone (tracked photo no longer in Photos) -> `DELETE /api/assets` (trash), with
-   the Live Photo video (Immich doesn't cascade). Over 25 at once waits for a tap.
-3. Links library photos the app didn't upload: same name (any extension) or capture time +-2 s as
-   candidates, then SHA1 of the current (else original) bytes must equal Immich's `checksum`.
-   No candidate or no hash match -> `unmatched`, rechecked only if the photo changes.
-4. Trashed in Immich -> `pendingRemoval`. Background runs post a notification; the delete needs
-   iOS's prompt, so it happens when the app is in front (notification tap or the button).
+Turn both delete directions off for a plain backup that never deletes anything.
 
-A photo whose edit is still being replaced, or with a job in flight, is skipped that run, so the
-edit replace (which trashes the old Immich asset) never deletes the iPhone photo.
+## Deleting from the iPhone without a tap
 
-## How iOS runs the extension
+iOS only lets an app delete photos after a confirmation prompt. To make Immich-to-iPhone deletes
+fully automatic, the app keeps a **Trashed in Immich** album with exactly the photos waiting to go,
+and a Shortcut can delete them without asking:
 
-- iOS calls `processJobs()` when it's enabled, on photo library changes, and again while we return
-  `.processing`. After `.completed` it waits for the next library change, so the app's test button
-  re-enables the extension to get an immediate run.
-- iOS may call `willTerminate()` and then reuse the same instance; the stop flag is reset per run.
-- Debug with the app's Log screen (extension and app write to `log.txt` in the app group) and
-  `ssh home sudo docker logs immich-backup-proxy`.
+1. Shortcuts > Automation > New > **Time of Day** (e.g. daily), **Run Immediately**.
+2. Actions: **Sync Immich deletions** (from this app) > **Find Photos** where Album is *Trashed in Immich*
+   > **Delete Photos**.
+3. In the Delete Photos action's details, turn on **Allow Deleting Without Confirmation**.
 
-## SideStore and ExtensionKit
+Deleted photos sit in Recently Deleted for 30 days, and photos restored in Immich drop out of the album
+before they can be deleted. Don't add photos to that album by hand.
 
-SideStore's signer (SideSign `AppBundle.loadExtensions`) only looks in `PlugIns/`. This
-extension is an ExtensionKit extension, which lives in `Extensions/`, so official SideStore
-leaves it without an App ID or profile and the install fails. Moving it to `PlugIns/` doesn't work
-either: iOS then demands an `NSExtension` dictionary ("extensionDictionary must be set", tested 2026-10-14).
+The same automation also keeps iPhone-to-Immich deletes flowing when you don't open the app (iOS wakes
+the extension for new photos, not for deletions).
 
-Fix: SideSign also scans `Extensions/` (one function). Until that is upstream, use the patched
-SideStore from the private repo github.com/dddd-zdf/sidestore-extfix (SideStore develop 12ff39c +
-`patches/sidesign-extensions.patch`, built with Xcode 26.4 like the official nightly). Install its
-IPA from inside SideStore (or with iloader). iloader's own signer (isideload) has the same gap.
+## Good to know
 
-Apple sign-in (error 80045 / 503, Oct 2026): SideStore's default Android anisette servers stopped
-working. Use the Windows servers iloader 2.3.8 uses: Anisette Servers > Server List URL
-`https://example.com/anisette-servers.json`, pick Jkcoxson, then User Customizations >
-Anisette Client Configuration > Fetch > Save as Overrides, reset adi.pb, sign in with
-trusted-device 2FA.
+- **Deletes go to trash on both sides**, never straight to permanent deletion.
+- The **upload extension decides its own schedule**; iOS usually runs it within minutes of a new photo.
+  Large backlogs take a while: up to 20 uploads run at once.
+- **Troubleshooting:** Settings > Advanced has a test upload, the extension's run count and a log you
+  can share. The proxy's log is `docker logs immich-sync-proxy`.
+- **Albums** are not synced (Immich albums and iPhone albums stay separate). Favorites are set on upload.
+- Works over a VPN (e.g. Tailscale) as long as the iPhone can reach the server when iOS runs the upload.
 
-## Proxy
+## Support
 
-Runs on `home` as Docker container `immich-backup-proxy` (host network, 127.0.0.1:2284).
-Caddy routes `photos.example.com/api/assets/background` to it. See infra `vms/home.md`.
+If this saves you time, you can [buy me a coffee](DONATION_LINK). Bugs and ideas: open an issue.
 
-- `OPTIONS` -> 501 (tells PhotoKit: no resumable uploads, send one plain request).
-- Request headers: `x-api-key`, `X-Filename` (percent-encoded), `X-Content-Type`,
-  `X-File-Created-At`, `X-File-Modified-At`, `X-Is-Favorite`, `X-Duration-Ms`, `X-Live-Photo-Video-Id`,
-  `X-Replace-Asset-Id` (after a successful upload with a different ID: `PUT /api/assets/copy`, then
-  `DELETE /api/assets` to trash the old one), `X-Stack-Original-Id` (stack the upload on top of that
-  original; with it, `X-Replace-Asset-Id` is what stood for the photo before, trashed unless it is
-  the original). Others (`X-Asset-Id`, `X-Upload-Part`, ...) are only
-  for the extension, which reads them back from the finished job.
-- Response headers (PhotoKit keeps only headers): `X-Immich-Asset-Id`, `X-Immich-Status`,
-  `X-Immich-Result` (created/duplicate), `X-Immich-Error`, `X-Immich-Replaced` and `X-Immich-Stacked` (ok or what failed).
+## For developers
 
-Deploy: copy `proxy/` to `/opt/immich-backup-proxy`, then
-`sudo docker build -t immich-backup-proxy:latest . && sudo docker rm -f immich-backup-proxy && sudo docker run -d --name immich-backup-proxy --restart unless-stopped --network host -e LISTEN_ADDR=127.0.0.1:2284 -e IMMICH_URL=http://127.0.0.1:2283 immich-backup-proxy:latest`.
+How it works inside (edit detection, Live Photo pairing, the proxy's headers, building without a Mac):
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Changes per version: [CHANGELOG.md](CHANGELOG.md).
 
-### Immich upgrades
+## License
 
-The coupling to Immich is `POST /api/assets` (multipart fields `assetData`, `fileCreatedAt`,
-`fileModifiedAt`, `filename`, `isFavorite`, `duration`, `livePhotoVideoId`), `PUT /api/assets/copy`
-(with `stack`/`favorite` flags), `DELETE /api/assets`, and stacks (`POST /api/stacks` with the shown
-asset first, `GET /api/stacks?primaryAssetId=`, `DELETE /api/stacks/{id}`), checked against v3.3.3.
-Before bumping `IMMICH_VERSION`, check that DTO in the release. If Immich merges resumable uploads
-(immich-app/immich#22385), PhotoKit could upload to Immich directly and the proxy can go.
-
-## References
-
-- Apple: "Uploading asset resources in the background" (PhotoKit).
-- Nextcloud iOS PRs #4279, #4343 (iOS 27 implementation).
-- YAIIU (github.com/FawenYo/YAIIU) and its immich-proxy (same idea).
+MIT. Not affiliated with Immich or FUTO.

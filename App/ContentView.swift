@@ -65,7 +65,7 @@ struct ContentView: View {
                         }
                         .disabled(sync.running)
                     } footer: {
-                        Text("Held back: more than \(DeleteSync.autoTrashLimit) disappeared at once, so it waits for you.")
+                        Text("Held back: more than \(Settings.bulkTrashLimit) disappeared at once, so it waits for you.")
                     }
                 }
 

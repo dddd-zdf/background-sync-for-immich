@@ -8,16 +8,14 @@ import UserNotifications
 /// needs iOS's confirmation prompt, which only the app in the foreground can show, so a background
 /// run that finds photos trashed in Immich plans a notification; tapping it shows the prompt.
 ///
-/// - Deleted on the iPhone -> moved to Immich's trash (automatic up to `autoTrashLimit` at once).
+/// - Deleted on the iPhone -> moved to Immich's trash (automatic up to `Settings.bulkTrashLimit` at once).
 /// - Trashed in Immich -> listed in `pendingRemoval`; deleted from the iPhone after iOS's prompt.
+/// Either direction can be turned off in Settings.
 /// - Library photos that reached Immich another way are linked first: same file name or capture
 ///   time finds a candidate, the SHA1 of the photo's bytes must equal Immich's checksum.
 @MainActor
 final class DeleteSync: ObservableObject {
     static let shared = DeleteSync()
-
-    /// More iPhone deletions than this in one go wait for a tap in the app (e.g. Photos access lost).
-    static let autoTrashLimit = 25
 
     @Published private(set) var store = SyncStore.load()
     @Published private(set) var running = false
@@ -99,7 +97,12 @@ final class DeleteSync: ObservableObject {
                                 originalIDs: Self.originalIDs(id, state))
         }
         var trashed = 0
-        if missing.count > Self.autoTrashLimit {
+        if !Settings.syncPhoneDeletes {
+            // Off: these deletes are never synced, even if it's turned back on later.
+            for id in missing.keys { store.markGone(id) }
+            missing = [:]
+            store.heldTrash = [:]
+        } else if missing.count > Settings.bulkTrashLimit {
             store.heldTrash = missing
         } else {
             store.heldTrash = [:]
@@ -157,14 +160,14 @@ final class DeleteSync: ObservableObject {
             pending[id] = .init(immichID: immichID, file: asset.originalFileName, videoID: asset.livePhotoVideoId,
                                 originalIDs: Self.originalIDs(id, state))
         }
-        store.pendingRemoval = pending
+        store.pendingRemoval = Settings.syncImmichDeletes ? pending : [:]
 
         var parts: [String] = []
         if trashed > 0 { parts.append("moved \(trashed) deleted on iPhone to Immich's trash") }
         if !store.heldTrash.isEmpty { parts.append("\(store.heldTrash.count) gone from iPhone wait for your OK") }
         if linked > 0 { parts.append("linked \(linked) more photos") }
         if leftToMatch > 0 { parts.append("\(leftToMatch) still to match") }
-        if !pending.isEmpty { parts.append("\(pending.count) trashed in Immich to remove from iPhone") }
+        if !store.pendingRemoval.isEmpty { parts.append("\(store.pendingRemoval.count) trashed in Immich to remove from iPhone") }
         return parts.isEmpty ? "In sync." : parts.joined(separator: "; ").capitalizedFirst + "."
     }
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0 (2026-10-18): choose how it syncs; ready to share
+
+- New settings, so sync can be set up your way:
+  - Upload: Videos, Screenshots, Older photos (photos from before upload was turned on that Immich lacks).
+    These only hold back new uploads; edits of photos already in Immich still sync.
+  - Edits: keep the original under the edit (as before), latest edit only (each edit replaces the last
+    one, no stack), or don't sync edits.
+  - Delete sync: each direction can be turned off (both off = backup only); the "ask first" limit for
+    many iPhone deletes at once is adjustable (was fixed at 25). Deletes made while a direction is off
+    are never synced later.
+- No built-in server address any more (new installs start empty).
+- Public docs: README for users, internals in docs/DEVELOPMENT.md, MIT license. A `v*` tag now attaches
+  the IPA to a GitHub release and publishes the proxy image `ghcr.io/dddd-zdf/immich-sync-proxy`.
+- Who must act: the user installs the IPA (defaults match 0.6.1, nothing to change). The proxy is unchanged.
+
 ## 0.6.1 (2026-10-15): originals come back from the trash
 
 - Immich matches uploads to trashed photos too. "Keep originals of edited photos" would have

@@ -6,7 +6,7 @@ enum Settings {
 
     /// e.g. https://photos.example.com (the proxy route lives under it).
     static var serverURL: String {
-        get { d.string(forKey: "serverURL") ?? "https://photos.example.com" }
+        get { d.string(forKey: "serverURL") ?? "" }
         set { d.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "serverURL") }
     }
 
@@ -26,6 +26,63 @@ enum Settings {
     static var wifiOnly: Bool {
         get { d.bool(forKey: "wifiOnly") }
         set { d.set(newValue, forKey: "wifiOnly") }
+    }
+
+    /// Upload videos (a Live Photo's video always goes with its photo).
+    static var includeVideos: Bool {
+        get { d.object(forKey: "includeVideos") as? Bool ?? true }
+        set { d.set(newValue, forKey: "includeVideos") }
+    }
+
+    static var skipScreenshots: Bool {
+        get { d.bool(forKey: "skipScreenshots") }
+        set { d.set(newValue, forKey: "skipScreenshots") }
+    }
+
+    /// Upload photos from before upload was turned on that the library check finds missing in Immich.
+    static var uploadOlder: Bool {
+        get { d.object(forKey: "uploadOlder") as? Bool ?? true }
+        set { d.set(newValue, forKey: "uploadOlder") }
+    }
+
+    enum EditMode: String, CaseIterable {
+        /// The edit on top of a stack, the untouched original under it (like Photos).
+        case stack
+        /// Only the current version; each edit replaces the last one in Immich.
+        case latest
+        /// Upload what's there at first upload; later edits stay on the iPhone.
+        case ignore
+
+        var label: String {
+            switch self {
+            case .stack: "Keep the original under the edit"
+            case .latest: "Latest edit only"
+            case .ignore: "Don't sync edits"
+            }
+        }
+    }
+
+    static var editMode: EditMode {
+        get { d.string(forKey: "editMode").flatMap(EditMode.init) ?? .stack }
+        set { d.set(newValue.rawValue, forKey: "editMode") }
+    }
+
+    /// Deleted on the iPhone -> moved to Immich's trash.
+    static var syncPhoneDeletes: Bool {
+        get { d.object(forKey: "syncPhoneDeletes") as? Bool ?? true }
+        set { d.set(newValue, forKey: "syncPhoneDeletes") }
+    }
+
+    /// Trashed in Immich -> deleted from the iPhone (after iOS's prompt or the album Shortcut).
+    static var syncImmichDeletes: Bool {
+        get { d.object(forKey: "syncImmichDeletes") as? Bool ?? true }
+        set { d.set(newValue, forKey: "syncImmichDeletes") }
+    }
+
+    /// More iPhone deletions than this at once wait for a tap (e.g. Photos access lost).
+    static var bulkTrashLimit: Int {
+        get { d.object(forKey: "bulkTrashLimit") as? Int ?? 25 }
+        set { d.set(newValue, forKey: "bulkTrashLimit") }
     }
 
     /// Notify while photos trashed in Immich wait to be deleted from the iPhone.

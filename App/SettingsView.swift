@@ -10,6 +10,13 @@ struct SettingsView: View {
     @State private var checking = false
     @State private var autoOn = Settings.autoSince != nil
     @State private var wifiOnly = Settings.wifiOnly
+    @State private var includeVideos = Settings.includeVideos
+    @State private var skipScreenshots = Settings.skipScreenshots
+    @State private var uploadOlder = Settings.uploadOlder
+    @State private var editMode = Settings.editMode
+    @State private var phoneDeletes = Settings.syncPhoneDeletes
+    @State private var immichDeletes = Settings.syncImmichDeletes
+    @State private var bulkLimit = Settings.bulkTrashLimit
     @State private var askOn = Settings.askEnabled
     @State private var askEvery = Settings.askEveryDays
     @State private var askTime = Calendar.current.date(
@@ -34,12 +41,59 @@ struct SettingsView: View {
                         Settings.wifiOnly = on
                         SharedLog.write("app", "wifi only \(on)")
                     }))
+                toggle("Videos", $includeVideos) { Settings.includeVideos = $0 }
+                toggle("Screenshots", Binding(get: { !skipScreenshots }, set: { skipScreenshots = !$0 })) {
+                    Settings.skipScreenshots = !$0
+                }
+                toggle("Older photos", $uploadOlder) { Settings.uploadOlder = $0 }
             } header: {
                 Text("Upload")
             } footer: {
-                Text("Uploads every photo on this iPhone that isn't in Immich yet: new ones right away, older ones once the library check finds them missing. Edited photos replace their old version in Immich.")
+                Text("Uploads every photo on this iPhone that isn't in Immich yet: new ones right away. With Older photos, also those from before upload was turned on that the library check finds missing. Live Photos always keep their video.")
             }
 
+            Section {
+                Picker("Edited photos", selection: Binding(
+                    get: { editMode },
+                    set: { mode in
+                        editMode = mode
+                        Settings.editMode = mode
+                        SharedLog.write("app", "edits: \(mode.rawValue)")
+                    })) {
+                    ForEach(Settings.EditMode.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } header: {
+                Text("Edits")
+            } footer: {
+                switch editMode {
+                case .stack: Text("Like Photos: Immich shows the edit, with the untouched original stacked under it. Revert in Photos brings the original back.")
+                case .latest: Text("Immich keeps only the current version; each edit replaces the last one (albums and favorites move over). Applies to new edits.")
+                case .ignore: Text("A photo uploads as it is when first uploaded; edits after that stay on this iPhone.")
+                }
+            }
+
+            Section {
+                toggle("Deleted on iPhone: trash in Immich", $phoneDeletes) { Settings.syncPhoneDeletes = $0 }
+                if phoneDeletes {
+                    Stepper("Ask first if over \(bulkLimit)", value: Binding(
+                        get: { bulkLimit },
+                        set: { bulkLimit = $0; Settings.bulkTrashLimit = $0 }), in: 0...500, step: 5)
+                }
+                toggle("Trashed in Immich: delete from iPhone", Binding(
+                    get: { immichDeletes },
+                    set: { on in
+                        immichDeletes = on
+                        Task { _ = await sync.run(linkBudget: 0); model.refresh() }  // empties or refills the list
+                    })) { Settings.syncImmichDeletes = $0 }
+            } header: {
+                Text("Delete sync")
+            } footer: {
+                Text("Turn both off for a backup that never deletes. Deletes made while a direction is off are never synced. Immich's trash keeps photos 30 days; Recently Deleted on the iPhone too.")
+            }
+
+            if immichDeletes {
             Section {
                 Toggle("Ask to delete", isOn: Binding(
                     get: { askOn },
@@ -96,6 +150,7 @@ struct SettingsView: View {
                 For a daily check: Shortcuts > Automation > Time of Day > "Sync Immich deletions" > Run Immediately.
                 """)
             }
+            }
 
             Section {
                 TextField("https://photos.example.com", text: $serverURL)
@@ -114,7 +169,7 @@ struct SettingsView: View {
             } header: {
                 Text("Immich server")
             } footer: {
-                Text("API key permissions: asset.upload, asset.read, asset.copy, asset.delete, user.read.")
+                Text("API key permissions: asset.upload, asset.read, asset.copy, asset.delete, user.read, stack.create, stack.read, stack.delete.")
             }
 
             Section("Permissions") {
@@ -144,6 +199,17 @@ struct SettingsView: View {
                 Button("Done") { daysFocused = false }
             }
         }
+    }
+
+    /// A toggle that saves to Settings and logs the change.
+    private func toggle(_ title: String, _ value: Binding<Bool>, save: @escaping (Bool) -> Void) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { value.wrappedValue },
+            set: { on in
+                value.wrappedValue = on
+                save(on)
+                SharedLog.write("app", "\(title): \(on ? "on" : "off")")
+            }))
     }
 
     private func saveAndCheck() async {
@@ -176,6 +242,7 @@ struct DiagnosticsView: View {
                 if Settings.testUploadRequested {
                     Text("Waiting for the extension to run").font(.footnote).foregroundStyle(.secondary)
                 }
+                if Settings.editMode == .stack {
                 Button("Keep originals of edited photos") {
                     Settings.keepOriginalsRequested = true
                     SharedLog.write("app", "keep originals requested")
@@ -184,6 +251,7 @@ struct DiagnosticsView: View {
                 .disabled(!model.extensionEnabled)
                 if Settings.keepOriginalsRequested {
                     Text("Waiting for the extension to run").font(.footnote).foregroundStyle(.secondary)
+                }
                 }
             }
             Section("Recent") {

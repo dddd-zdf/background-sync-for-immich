@@ -126,10 +126,10 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     // MARK: - Deleted on the iPhone
 
     /// iOS runs the extension on every photo library change, deletions included, so this is where
-    /// a delete on the iPhone reaches Immich's trash without the app. Over `autoTrashLimit` at once
-    /// is left for the app to ask about (it may be lost Photos access, not deletions).
+    /// a delete on the iPhone reaches Immich's trash without the app. Over `Settings.bulkTrashLimit`
+    /// at once is left for the app to ask about (it may be lost Photos access, not deletions).
     private func trashDeletedOnPhone(_ state: inout UploadState) async {
-        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
+        guard Settings.syncPhoneDeletes, PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized,
               let base = URL(string: Settings.serverURL), !Settings.apiKey.isEmpty else { return }
         let tracked = Set(state.uploaded.keys).union(sync.links.keys)
             .subtracting(sync.gone).subtracting(state.trashed)
@@ -146,7 +146,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         let missing = tracked.subtracting(present)
         SharedLog.write("ext", "delete check: \(tracked.count) tracked, \(missing.count) gone from iPhone")
         guard !missing.isEmpty else { return }
-        guard missing.count <= Self.autoTrashLimit else {
+        guard missing.count <= Settings.bulkTrashLimit else {
             SharedLog.write("ext", "\(missing.count) gone from iPhone at once; leaving them for the app to ask")
             return
         }
@@ -168,8 +168,6 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             SharedLog.write("ext", "trashed \(trashedNow.count) in Immich, deleted on iPhone")
         }
     }
-
-    private static let autoTrashLimit = 25
 
     /// `DELETE /api/assets` moves to Immich's trash. Returns the HTTP status, 0 if unreachable.
     private func trashInImmich(_ ids: [String], base: URL) async -> Int {
@@ -207,6 +205,8 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     /// `modificationDate` also changes for favorites, albums and Photos' own analysis, so an
     /// edit is confirmed by a change in the asset's adjustment data.
     private func findEdits(_ state: inout UploadState) async {
+        // Not advancing `editsCheckedUntil`: edits made meanwhile are found if edits are turned back on.
+        guard Settings.editMode != .ignore else { return }
         let scanStart = Date()
         let result: PHFetchResult<PHAsset>
         if let checked = state.editsCheckedUntil {
@@ -249,7 +249,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
                 SharedLog.write("ext", "revert: \(id) back to original \(original)")
                 continue
             }
-            if fingerprint != "original", state.originals[id] == nil, known.fingerprint == "original" {
+            if Settings.editMode == .stack, fingerprint != "original", state.originals[id] == nil, known.fingerprint == "original" {
                 // First edit of a photo that reached Immich unedited: Immich already has the original.
                 state.originals[id] = current
                 state.originalVideos[id] = state.liveVideos[id] ?? sync.links[id]?.videoID
@@ -329,8 +329,10 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         func addNeeded(_ result: PHFetchResult<PHAsset>) {
             for i in 0..<result.count where assets.count < slots {
                 let id = result.object(at: i).localIdentifier
-                let needed = sync.immichID(for: id, state) == nil || state.replacing[id] != nil || state.requested.contains(id)
-                if needed && !state.gaveUp(on: id) {
+                let new = sync.immichID(for: id, state) == nil
+                let needed = new || state.replacing[id] != nil || state.requested.contains(id)
+                // The filters only hold back new uploads; edits of what's already in Immich still sync.
+                if needed && !state.gaveUp(on: id) && (!new || state.requested.contains(id) || Self.wanted(result.object(at: i))) {
                     add(result.object(at: i))
                 }
             }
@@ -365,7 +367,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             if since < dayAgo { addNeeded(fetch(after: since, ascending: true, mediaType: nil, limit: 0)) }
             // Older photos the app's library check found missing from Immich (no name/time
             // candidate, or none with the same bytes): this is what replaces a backlog start date.
-            if !sync.unmatched.isEmpty {
+            if Settings.uploadOlder, !sync.unmatched.isEmpty {
                 addNeeded(PHAsset.fetchAssets(withLocalIdentifiers: Array(sync.unmatched.keys), options: nil))
             }
         }
@@ -420,7 +422,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         let live = asset.mediaType == .image && asset.mediaSubtypes.contains(.photoLive)
         let original = first(asset.mediaType == .video ? .video : .photo)
         let render = Self.render(of: asset, resources)
-        if render != nil, state.originals[id] == nil, let original {
+        if Settings.editMode == .stack, render != nil, state.originals[id] == nil, let original {
             if live, state.originalVideos[id] == nil, let video = first(.pairedVideo) { return (video, .originalVideo) }
             return (original, .original)
         }
@@ -429,6 +431,13 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             if render == nil || state.originalVideos[id] == nil, let video = first(.pairedVideo) { return (video, .video) }
         }
         return (render ?? original).map { ($0, .main) }
+    }
+
+    /// The upload filters in Settings.
+    private static func wanted(_ asset: PHAsset) -> Bool {
+        if asset.mediaType == .video && !Settings.includeVideos { return false }
+        if Settings.skipScreenshots && asset.mediaSubtypes.contains(.photoScreenshot) { return false }
+        return true
     }
 
     /// The edited render, if the asset has been edited in Photos.
