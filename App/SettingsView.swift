@@ -255,6 +255,21 @@ struct DiagnosticsView: View {
                 }
                 }
             }
+            Section {
+                Button("Test upload without the server container") {
+                    Settings.directTestRequested = true
+                    SharedLog.write("app", "direct upload test requested")
+                    model.wakeExtension()
+                }
+                .disabled(!model.extensionEnabled)
+                if Settings.directTestRequested {
+                    Text("Waiting for the extension to run").font(.footnote).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Experiment")
+            } footer: {
+                Text("Sends your newest photo and newest video straight to Immich, building the upload on the iPhone instead of in the server container. Swipe the app away right after tapping, wait a few minutes, then check the Log for \"direct\" lines. Immich will say \"duplicate\" for photos it already has; that still counts.")
+            }
             Section("Recent") {
                 ForEach(model.snapshot.state.recent.prefix(15), id: \.self) {
                     Text($0).font(.caption2.monospaced())

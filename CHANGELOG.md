@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.1 (2026-10-18): experiment, uploads without the server container
+
+- Advanced > Experiment > "Test upload without the server container": the extension builds Immich's
+  upload form on the iPhone and sends the newest photo and video straight to Immich with iOS's
+  background transfer service, bypassing the container. Results only go to the Log ("direct" lines);
+  normal uploads are unchanged and still use the container.
+- Who must act: the user installs it (not released; CI artifact), taps the button, swipes the app away,
+  waits a few minutes, then sends Claude the Log.
+
 ## 0.7.0 (2026-10-18): choose how it syncs; ready to share
 
 - New name: **Background Sync for Immich** ("BG Sync" on the home screen), so it isn't mistaken for an

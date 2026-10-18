@@ -134,6 +134,12 @@ enum Settings {
         set { d.set(newValue, forKey: "retryFailedRequested") }
     }
 
+    /// One-shot request from the app: the no-container upload experiment (`DirectUpload`).
+    static var directTestRequested: Bool {
+        get { d.bool(forKey: "directTestRequested") }
+        set { d.set(newValue, forKey: "directTestRequested") }
+    }
+
     /// One-shot request from the app: upload the newest photo once.
     static var testUploadRequested: Bool {
         get { d.bool(forKey: "testUploadRequested") }

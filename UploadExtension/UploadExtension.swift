@@ -11,6 +11,9 @@ import UniformTypeIdentifiers
 @main
 final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     private let cancelled = Flag()
+    /// Experiment: uploads without the companion container (`DirectUpload`).
+    private let directDelegate = DirectUpload.Delegate(process: "extension")
+    private lazy var directSession = DirectUpload.session(delegate: directDelegate)
     /// The app's links to photos that reached Immich another way (read-only here).
     private var sync = SyncStore()
 
@@ -37,6 +40,11 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
                 Settings.retryFailedRequested = false
                 SharedLog.write("ext", "retrying \(state.failed.count) failed")
                 state.failed = [:]
+            }
+            if Settings.directTestRequested {
+                Settings.directTestRequested = false
+                SharedLog.write("ext", "direct upload test requested")
+                await DirectUpload.startTest(session: directSession)
             }
             if Settings.keepOriginalsRequested {
                 Settings.keepOriginalsRequested = false

@@ -23,6 +23,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    /// Experiment: iOS launches the app in the background with the results of `DirectUpload` uploads
+    /// the extension started, if the extension is gone by then.
+    private var directSession: URLSession?
+    private let directDelegate = DirectUpload.Delegate(process: "app")
+
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        SharedLog.write("direct", "app launched for background session \(identifier)")
+        guard identifier == DirectUpload.sessionID else { completionHandler(); return }
+        directDelegate.finishedEvents = completionHandler
+        directSession = DirectUpload.session(delegate: directDelegate)
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         guard response.notification.request.identifier == DeleteSync.notificationID else { return }
         await MainActor.run { DeleteSync.shared.removalRequested = true }
