@@ -11,6 +11,9 @@ resumable uploads (immich-app/immich#22385), it won't be needed anymore.
 
 Two steps: run the container, then send **one URL path** of your Immich site to it.
 
+Using an AI agent with shell access to your server? Point it at [AGENT_SETUP.md](AGENT_SETUP.md) and it
+does all of this for you.
+
 ```
 iPhone --HTTPS--> your reverse proxy --/api/assets/background--> background-sync-server:2284 --> Immich
                                      --everything else---------> Immich (unchanged)

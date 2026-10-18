@@ -20,6 +20,17 @@ called **BG Sync**.
 > **Status:** works daily for the author. It is a sideloaded app (not on the App Store) and
 > needs one small extra container on your Immich server. Read the requirements before you start.
 
+## Set up with an AI agent
+
+If you use an AI agent that can run commands on your server (Claude Code, Codex, etc.), it can do the
+server side for you. Tell it:
+
+> Set up Background Sync for Immich on my server by following
+> https://github.com/dddd-zdf/background-sync-for-immich/blob/main/docs/AGENT_SETUP.md
+
+It adds the container and the route, checks them, and tells you the few steps left on your iPhone.
+Prefer doing it yourself? Read on.
+
 ## Requirements
 
 - iPhone on **iOS 27** or later.
