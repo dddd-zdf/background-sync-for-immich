@@ -20,7 +20,8 @@
 - Notifications are asked for the first time there's something to notify, not on first launch.
 - An unreadable state file is kept as `*.unreadable.json` (and logged) instead of silently replaced.
 - Public docs: README for users, internals in docs/DEVELOPMENT.md, MIT license. A `v*` tag now attaches
-  the IPA to a GitHub release and publishes the proxy image `ghcr.io/dddd-zdf/immich-sync-proxy`.
+  the IPA and a SideStore source (`releases/latest/download/source.json`, for in-app installs and
+  updates) to a GitHub release and publishes the proxy image `ghcr.io/dddd-zdf/immich-sync-proxy`.
 - Who must act: the user installs the IPA (defaults match 0.6.1, nothing to change). The proxy is unchanged.
 
 ## 0.6.1 (2026-10-15): originals come back from the trash

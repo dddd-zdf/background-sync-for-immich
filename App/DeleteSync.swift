@@ -117,7 +117,8 @@ final class DeleteSync: ObservableObject {
         let bySecond = Dictionary(grouping: remote) { Int($0.fileCreatedAt.timeIntervalSince1970) }
         let deadline = linkBudget.map { Date().addingTimeInterval($0) }
         // Matching may download photos kept only in iCloud (the whole library, for a first sync).
-        let download = !(Settings.wifiOnly && await Self.onExpensiveNetwork())
+        let expensive = Settings.wifiOnly ? await Self.onExpensiveNetwork() : false
+        let download = !expensive
         let todo = phone.values.filter { asset in
             let id = asset.localIdentifier
             return store.immichID(for: id, state) == nil && state.replacing[id] == nil && !busy.contains(id)

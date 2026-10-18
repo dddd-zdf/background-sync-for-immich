@@ -73,8 +73,14 @@ Check: `curl http://127.0.0.1:2284/health` answers `ok`.
 
 1. Install the [patched SideStore](https://github.com/dddd-zdf/sidestore-extfix/releases) (same steps as
    regular SideStore).
-2. Download `ImmichSync-<version>.ipa` from [Releases](../../releases) and open it in SideStore.
-   Updating later the same way keeps your settings.
+2. In SideStore, **Sources > +** and add this source, then install **Immich Sync** from it.
+   SideStore then shows updates as they're released (updating keeps your settings).
+
+   ```
+   https://github.com/dddd-zdf/immich-backup/releases/latest/download/source.json
+   ```
+
+   Or download `ImmichSync-<version>.ipa` from [Releases](../../releases) and open it in SideStore.
 
 Free Apple accounts must refresh sideloaded apps every 7 days; SideStore does this for you.
 
