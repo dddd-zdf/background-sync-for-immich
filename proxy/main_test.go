@@ -281,9 +281,7 @@ func TestDebugLog(t *testing.T) {
 	defer immich.Close()
 	handler := logHandler(immich.URL, http.DefaultClient)
 	for key, want := range map[string]int{"key123": http.StatusNoContent, "wrong": http.StatusUnauthorized} {
-		req := httptest.NewRequest(http.MethodPost, "/api/assets/background", strings.NewReader("line one
-line two
-"))
+		req := httptest.NewRequest(http.MethodPost, "/api/assets/background", strings.NewReader("line one\nline two\n"))
 		req.Header.Set("x-api-key", key)
 		req.Header.Set("X-Debug-Log", "1")
 		rec := httptest.NewRecorder()
