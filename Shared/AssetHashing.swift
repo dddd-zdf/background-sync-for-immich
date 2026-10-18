@@ -16,15 +16,16 @@ enum AssetHashing {
     }
 
     /// Base64 SHA1 of the resource's bytes: the same value as Immich's `checksum`.
-    static func sha1(of resource: PHAssetResource) async -> String? {
+    /// `download`: false reads only what's on the iPhone (nil for photos kept only in iCloud).
+    static func sha1(of resource: PHAssetResource, download: Bool = true) async -> String? {
         let hasher = StreamHasher<Insecure.SHA1>()
-        guard await read(resource, into: hasher) else { return nil }
+        guard await read(resource, into: hasher, download: download) else { return nil }
         return Data(hasher.digest).base64EncodedString()
     }
 
-    private static func read<H>(_ resource: PHAssetResource, into hasher: StreamHasher<H>) async -> Bool {
+    private static func read<H>(_ resource: PHAssetResource, into hasher: StreamHasher<H>, download: Bool = true) async -> Bool {
         let options = PHAssetResourceRequestOptions()
-        options.isNetworkAccessAllowed = true
+        options.isNetworkAccessAllowed = download
         return await withCheckedContinuation { continuation in
             _ = PHAssetResourceManager.default().requestData(for: resource, options: options,
                 dataReceivedHandler: { hasher.update($0) },

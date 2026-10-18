@@ -332,7 +332,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
                 let new = sync.immichID(for: id, state) == nil
                 let needed = new || state.replacing[id] != nil || state.requested.contains(id)
                 // The filters only hold back new uploads; edits of what's already in Immich still sync.
-                if needed && !state.gaveUp(on: id) && (!new || state.requested.contains(id) || Self.wanted(result.object(at: i))) {
+                if needed && !state.gaveUp(on: id) && (!new || state.requested.contains(id) || Settings.wantsUpload(result.object(at: i))) {
                     add(result.object(at: i))
                 }
             }
@@ -431,13 +431,6 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             if render == nil || state.originalVideos[id] == nil, let video = first(.pairedVideo) { return (video, .video) }
         }
         return (render ?? original).map { ($0, .main) }
-    }
-
-    /// The upload filters in Settings.
-    private static func wanted(_ asset: PHAsset) -> Bool {
-        if asset.mediaType == .video && !Settings.includeVideos { return false }
-        if Settings.skipScreenshots && asset.mediaSubtypes.contains(.photoScreenshot) { return false }
-        return true
     }
 
     /// The edited render, if the asset has been edited in Photos.

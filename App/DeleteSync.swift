@@ -1,4 +1,6 @@
 import Foundation
+import Network
+import os
 import Photos
 import UserNotifications
 
@@ -114,6 +116,8 @@ final class DeleteSync: ObservableObject {
         let byName = Dictionary(grouping: remote) { Self.nameKey($0.originalFileName) }
         let bySecond = Dictionary(grouping: remote) { Int($0.fileCreatedAt.timeIntervalSince1970) }
         let deadline = linkBudget.map { Date().addingTimeInterval($0) }
+        // Matching may download photos kept only in iCloud (the whole library, for a first sync).
+        let download = !(Settings.wifiOnly && await Self.onExpensiveNetwork())
         let todo = phone.values.filter { asset in
             let id = asset.localIdentifier
             return store.immichID(for: id, state) == nil && state.replacing[id] == nil && !busy.contains(id)
@@ -138,7 +142,7 @@ final class DeleteSync: ObservableObject {
             var match: Immich.Asset?
             var unreadable = false
             for resource in Self.hashOrder(resources, asset) {
-                guard let sha1 = await AssetHashing.sha1(of: resource) else { unreadable = true; continue }
+                guard let sha1 = await AssetHashing.sha1(of: resource, download: download) else { unreadable = true; continue }
                 if let found = candidates.first(where: { $0.checksum == sha1 }) { match = found; break }
             }
             if let match {
@@ -187,6 +191,8 @@ final class DeleteSync: ObservableObject {
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "title == %@", Self.albumTitle)
         var album = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .albumRegular, options: options).firstObject
+        // That delete direction off: empty an existing album, but don't add one to the library.
+        if album == nil && !Settings.syncImmichDeletes { return }
         // Created even when empty, so Shortcuts' Find Photos can offer it as a filter.
         do {
             if album == nil {
@@ -248,6 +254,7 @@ final class DeleteSync: ObservableObject {
                                                 matching: DateComponents(hour: Settings.askHour, minute: Settings.askMinute),
                                                 matchingPolicy: .nextTime) ?? earliest
         }
+        await Self.requestNotifications()  // asks once, the first time there is something to ask about
         let content = UNMutableNotificationContent()
         content.title = "\(pending) photo\(pending == 1 ? "" : "s") trashed in Immich"
         content.body = "Tap to delete \(pending == 1 ? "it" : "them") from this iPhone."
@@ -266,6 +273,21 @@ final class DeleteSync: ObservableObject {
     func replanAskNotification() async {
         AppGroup.defaults.removeObject(forKey: "askAt")
         await updateAskNotification()
+    }
+
+    /// Cellular or a personal hotspot.
+    private static func onExpensiveNetwork() async -> Bool {
+        await withCheckedContinuation { continuation in
+            let monitor = NWPathMonitor()
+            let first = OSAllocatedUnfairLock(initialState: true)
+            monitor.pathUpdateHandler = { path in
+                // Only the first update answers; a second resume would crash.
+                guard first.withLock({ isFirst in defer { isFirst = false }; return isFirst }) else { return }
+                monitor.cancel()
+                continuation.resume(returning: path.isExpensive)
+            }
+            monitor.start(queue: .global(qos: .utility))
+        }
     }
 
     static func requestNotifications() async {

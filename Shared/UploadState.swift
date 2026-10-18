@@ -65,9 +65,15 @@ struct UploadState: Codable {
     static var fileURL: URL? { AppGroup.container?.appendingPathComponent("state.json") }
 
     static func load() -> UploadState {
-        guard let url = fileURL, let data = try? Data(contentsOf: url),
-              let state = try? JSONDecoder().decode(UploadState.self, from: data) else { return UploadState() }
-        return state
+        guard let url = fileURL, let data = try? Data(contentsOf: url) else { return UploadState() }
+        do {
+            return try JSONDecoder().decode(UploadState.self, from: data)
+        } catch {
+            // Starting over is safe (Immich matches what it has), but keep the old file for a look.
+            try? data.write(to: url.deletingPathExtension().appendingPathExtension("unreadable.json"))
+            SharedLog.write("state", "\(url.lastPathComponent) unreadable, starting over: \(error)")
+            return UploadState()
+        }
     }
 
     func save() {

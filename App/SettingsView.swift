@@ -169,7 +169,7 @@ struct SettingsView: View {
             } header: {
                 Text("Immich server")
             } footer: {
-                Text("API key permissions: asset.upload, asset.read, asset.copy, asset.delete, user.read, stack.create, stack.read, stack.delete.")
+                Text("API key permissions: \(Diagnostics.requiredPermissions.joined(separator: ", ")).")
             }
 
             Section("Permissions") {
@@ -214,6 +214,7 @@ struct SettingsView: View {
 
     private func saveAndCheck() async {
         Settings.serverURL = serverURL
+        serverURL = Settings.serverURL  // shows the cleaned-up form
         Settings.apiKey = apiKey
         checking = true
         serverCheck = await Diagnostics.checkServer()

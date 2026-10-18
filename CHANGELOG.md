@@ -10,7 +10,15 @@
   - Delete sync: each direction can be turned off (both off = backup only); the "ask first" limit for
     many iPhone deletes at once is adjustable (was fixed at 25). Deletes made while a direction is off
     are never synced later.
-- No built-in server address any more (new installs start empty).
+- No built-in server address any more (new installs start empty). The address is cleaned up on save:
+  no `https://`, a trailing `/` or the Immich app's `.../api` form all work.
+- "Save and check" also says which API key permissions are missing.
+- Wi-Fi only now also covers matching: on cellular the library check doesn't download photos kept only
+  in iCloud to hash them (a first sync could otherwise pull the whole library).
+- "Waiting to upload" follows the upload filters.
+- The "Trashed in Immich" album isn't created while that delete direction is off.
+- Notifications are asked for the first time there's something to notify, not on first launch.
+- An unreadable state file is kept as `*.unreadable.json` (and logged) instead of silently replaced.
 - Public docs: README for users, internals in docs/DEVELOPMENT.md, MIT license. A `v*` tag now attaches
   the IPA to a GitHub release and publishes the proxy image `ghcr.io/dddd-zdf/immich-sync-proxy`.
 - Who must act: the user installs the IPA (defaults match 0.6.1, nothing to change). The proxy is unchanged.

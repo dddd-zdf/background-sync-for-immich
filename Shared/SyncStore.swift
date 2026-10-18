@@ -50,9 +50,15 @@ struct SyncStore: Codable {
     static var fileURL: URL? { AppGroup.container?.appendingPathComponent("sync.json") }
 
     static func load() -> SyncStore {
-        guard let url = fileURL, let data = try? Data(contentsOf: url),
-              let store = try? JSONDecoder().decode(SyncStore.self, from: data) else { return SyncStore() }
-        return store
+        guard let url = fileURL, let data = try? Data(contentsOf: url) else { return SyncStore() }
+        do {
+            return try JSONDecoder().decode(SyncStore.self, from: data)
+        } catch {
+            // Starting over is safe (Immich matches what it has), but keep the old file for a look.
+            try? data.write(to: url.deletingPathExtension().appendingPathExtension("unreadable.json"))
+            SharedLog.write("state", "\(url.lastPathComponent) unreadable, starting over: \(error)")
+            return SyncStore()
+        }
     }
 
     func save() {

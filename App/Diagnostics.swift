@@ -39,13 +39,18 @@ enum Diagnostics {
         options.predicate = NSPredicate(format: "creationDate > %@", since as NSDate)
         var counted = Set<String>()
         PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in
-            if needed(asset.localIdentifier) { counted.insert(asset.localIdentifier) }
+            if needed(asset.localIdentifier) && Settings.wantsUpload(asset) { counted.insert(asset.localIdentifier) }
         }
-        PHAsset.fetchAssets(withLocalIdentifiers: Array(sync.unmatched.keys), options: nil).enumerateObjects { asset, _, _ in
-            if needed(asset.localIdentifier) { counted.insert(asset.localIdentifier) }
+        if Settings.uploadOlder {
+            PHAsset.fetchAssets(withLocalIdentifiers: Array(sync.unmatched.keys), options: nil).enumerateObjects { asset, _, _ in
+                if needed(asset.localIdentifier) && Settings.wantsUpload(asset) { counted.insert(asset.localIdentifier) }
+            }
         }
         return count + counted.count
     }
+
+    static let requiredPermissions = ["asset.upload", "asset.read", "asset.copy", "asset.delete", "user.read",
+                                      "stack.create", "stack.read", "stack.delete"]
 
     /// Checks the API key against Immich, then that the upload proxy answers PhotoKit's
     /// preflight (it must reply 501 so PhotoKit uses a plain, non-resumable upload).
@@ -62,6 +67,16 @@ enum Diagnostics {
             lines.append(code == 200 ? "Immich: signed in as \(name ?? "?")" : "Immich: HTTP \(code)")
         } catch {
             lines.append("Immich: \(error.localizedDescription)")
+        }
+
+        var key = URLRequest(url: base.appendingPathComponent("api/api-keys/me"))
+        key.setValue(Settings.apiKey, forHTTPHeaderField: "x-api-key")
+        if case let (data, response)? = try? await URLSession.shared.data(for: key),
+           (response as? HTTPURLResponse)?.statusCode == 200,
+           let granted = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["permissions"] as? [String],
+           !granted.contains("all") {
+            let missing = requiredPermissions.filter { !granted.contains($0) }
+            lines.append(missing.isEmpty ? "API key: ok" : "API key is missing: " + missing.joined(separator: ", "))
         }
 
         var preflight = URLRequest(url: upload)

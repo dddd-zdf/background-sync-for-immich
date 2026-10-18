@@ -99,7 +99,6 @@ struct ContentView: View {
                 if phase == .active { model.refresh(); autoSync(); removeIfRequested() }
             }
             .onChange(of: sync.removalRequested) { _, _ in removeIfRequested() }
-            .task { await DeleteSync.requestNotifications() }
         }
     }
 

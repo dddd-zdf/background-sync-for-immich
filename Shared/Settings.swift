@@ -1,4 +1,5 @@
 import Foundation
+import Photos
 
 /// Settings shared by the app (writes) and the extension (reads), stored in the app group.
 enum Settings {
@@ -7,7 +8,18 @@ enum Settings {
     /// e.g. https://photos.example.com (the proxy route lives under it).
     static var serverURL: String {
         get { d.string(forKey: "serverURL") ?? "" }
-        set { d.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "serverURL") }
+        set { d.set(normalized(newValue), forKey: "serverURL") }
+    }
+
+    /// Accepts what people paste: no scheme (https assumed), a trailing slash, or the Immich app's
+    /// ".../api" form.
+    static func normalized(_ url: String) -> String {
+        var url = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty else { return url }
+        if !url.contains("://") { url = "https://" + url }
+        while url.hasSuffix("/") { url.removeLast() }
+        if url.lowercased().hasSuffix("/api") { url.removeLast(4) }
+        return url
     }
 
     static var apiKey: String {
@@ -37,6 +49,13 @@ enum Settings {
     static var skipScreenshots: Bool {
         get { d.bool(forKey: "skipScreenshots") }
         set { d.set(newValue, forKey: "skipScreenshots") }
+    }
+
+    /// The upload filters above, for a photo not in Immich yet.
+    static func wantsUpload(_ asset: PHAsset) -> Bool {
+        if asset.mediaType == .video && !includeVideos { return false }
+        if skipScreenshots && asset.mediaSubtypes.contains(.photoScreenshot) { return false }
+        return true
     }
 
     /// Upload photos from before upload was turned on that the library check finds missing in Immich.
