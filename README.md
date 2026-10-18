@@ -142,7 +142,7 @@ the extension for new photos, not for deletions).
 
 ## Support
 
-If this saves you time, you can [buy me a coffee](DONATION_LINK). Bugs and ideas: open an issue.
+Bugs and ideas: open an issue.
 
 ## For developers
 
