@@ -133,8 +133,8 @@ It keeps no state and stores no keys: each request carries the user's own `x-api
 - Response headers (PhotoKit keeps only headers): `X-Immich-Asset-Id`, `X-Immich-Status`,
   `X-Immich-Result` (created/duplicate), `X-Immich-Error`, `X-Immich-Replaced` and `X-Immich-Stacked` (ok or what failed).
 
-Author's deploy (no registry): copy `proxy/` to `/opt/immich-backup-proxy`, then
-`sudo docker build -t immich-backup-proxy:latest . && sudo docker rm -f immich-backup-proxy && sudo docker run -d --name immich-backup-proxy --restart unless-stopped --network host -e LISTEN_ADDR=127.0.0.1:2284 -e IMMICH_URL=http://127.0.0.1:2283 immich-backup-proxy:latest`.
+Images: `ghcr.io/dddd-zdf/background-sync-for-immich-server`, built by the Proxy workflow (`:latest` on
+a manual run, plus `:<tag>` on a `v*` tag). The author's server runs it as in docs/SERVER.md.
 
 ### Immich upgrades
 
