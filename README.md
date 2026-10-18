@@ -104,7 +104,12 @@ The app then matches your library with what's already in Immich and uploads what
 | Trashed in Immich: delete from iPhone | The other direction | on |
 | Ask to delete | A reminder notification while photos trashed in Immich wait to be deleted from the iPhone | weekly, 19:00 |
 
-Turn both delete directions off for a plain backup that never deletes anything.
+The three classic modes:
+
+- **Backup only:** both delete directions off. Nothing is ever deleted anywhere.
+- **One-way, Immich keeps your curation:** only "Deleted on iPhone" on. Photos you delete in Immich stay
+  on the iPhone but are **never uploaded again**.
+- **Full two-way sync:** both on (the default).
 
 ## Deleting from the iPhone without a tap
 
