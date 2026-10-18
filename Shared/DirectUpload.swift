@@ -10,10 +10,15 @@ import UniformTypeIdentifiers
 /// app swiped away, and who gets the result (the extension, or the app relaunched in the background).
 /// Results go to the shared log only; upload state is not touched.
 enum DirectUpload {
-    static let sessionID = "direct-upload-test"
+    /// Only one process may hold a background session at a time (else NSURLErrorDomain -996), and the
+    /// app keeps the one iOS woke it for. So each extension instance gets its own session; the app
+    /// connects to it only to collect results, then lets go.
+    static let sessionPrefix = "direct-upload."
 
-    static func session(delegate: Delegate) -> URLSession {
-        let config = URLSessionConfiguration.background(withIdentifier: sessionID)
+    static func newSessionID() -> String { sessionPrefix + UUID().uuidString }
+
+    static func session(id: String, delegate: Delegate) -> URLSession {
+        let config = URLSessionConfiguration.background(withIdentifier: id)
         config.sharedContainerIdentifier = AppGroup.identifier
         config.sessionSendsLaunchEvents = true
         config.isDiscretionary = false

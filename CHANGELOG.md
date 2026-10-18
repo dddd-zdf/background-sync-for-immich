@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.2 (nightly): experiment fix
+
+- "Test upload without the server container" failed on a second run with NSURLErrorDomain -996: the app
+  still held the transfer session iOS had woken it for. Each extension run now uses its own session, and
+  the app releases a session once it has collected the results.
+- Who must act: the user updates from the nightly source and reruns the test.
+
 ## 0.7.1 (2026-10-18): experiment, uploads without the server container
 
 - Advanced > Experiment > "Test upload without the server container": the extension builds Immich's

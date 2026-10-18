@@ -13,7 +13,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     private let cancelled = Flag()
     /// Experiment: uploads without the companion container (`DirectUpload`).
     private let directDelegate = DirectUpload.Delegate(process: "extension")
-    private lazy var directSession = DirectUpload.session(delegate: directDelegate)
+    private lazy var directSession = DirectUpload.session(id: DirectUpload.newSessionID(), delegate: directDelegate)
     /// The app's links to photos that reached Immich another way (read-only here).
     private var sync = SyncStore()
 
