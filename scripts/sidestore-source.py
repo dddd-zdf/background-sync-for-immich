@@ -7,20 +7,20 @@ https://github.com/<repo>/releases/latest/download/source.json
 import datetime, json, os, sys
 
 tag, ipa, notes_file, out = sys.argv[1:5]
-repo = os.environ.get("GITHUB_REPOSITORY", "dddd-zdf/immich-backup")
+repo = os.environ.get("GITHUB_REPOSITORY", "dddd-zdf/background-sync-for-immich")
 version = tag.lstrip("v")
 raw = f"https://raw.githubusercontent.com/{repo}/main"
 notes = open(notes_file, encoding="utf-8").read().strip()
 
 source = {
-    "name": "Immich Sync",
-    "identifier": "io.github.dddd-zdf.immich-sync",
+    "name": "Background Sync for Immich",
+    "identifier": "io.github.dddd-zdf.background-sync-for-immich",
     "subtitle": "Two-way iPhone Photos sync for Immich",
     "website": f"https://github.com/{repo}",
     "iconURL": f"{raw}/App/Assets.xcassets/AppIcon.appiconset/icon.png",
     "tintColor": "#4250AF",
     "apps": [{
-        "name": "Immich Sync",
+        "name": "Background Sync for Immich",
         "bundleIdentifier": "com.difei.immichbackup",
         "developerName": "dddd-zdf",
         "subtitle": "Background upload and two-way sync with your Immich server",

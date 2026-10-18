@@ -1,6 +1,6 @@
 # Server setup
 
-Immich Sync needs one small container next to your Immich server, `immich-sync-proxy`. It runs on
+Background Sync for Immich needs one small container next to your Immich server, `background-sync-server`. It runs on
 **your** server; nothing goes through anyone else's.
 
 **Why it's needed:** iOS's background upload (the part that keeps working with the app closed) can only
@@ -12,7 +12,7 @@ resumable uploads (immich-app/immich#22385), it won't be needed anymore.
 Two steps: run the container, then send **one URL path** of your Immich site to it.
 
 ```
-iPhone --HTTPS--> your reverse proxy --/api/assets/background--> immich-sync-proxy:2284 --> Immich
+iPhone --HTTPS--> your reverse proxy --/api/assets/background--> background-sync-server:2284 --> Immich
                                      --everything else---------> Immich (unchanged)
 ```
 
@@ -30,9 +30,9 @@ iPhone --HTTPS--> your reverse proxy --/api/assets/background--> immich-sync-pro
 Add this service to the `docker-compose.yml` you run Immich with (next to `immich-server`):
 
 ```yaml
-  immich-sync-proxy:
-    container_name: immich-sync-proxy
-    image: ghcr.io/dddd-zdf/immich-sync-proxy:latest
+  background-sync-server:
+    container_name: background-sync-server
+    image: ghcr.io/dddd-zdf/background-sync-for-immich-server:latest
     restart: always
     environment:
       LISTEN_ADDR: 0.0.0.0:2284
@@ -80,21 +80,21 @@ location = /api/assets/background {
 Edit Immich's proxy host > **Custom locations** > Add location:
 
 - Location: `/api/assets/background`
-- Scheme `http`, Forward hostname `immich-sync-proxy` (same Docker network) or the host's IP, port `2284`
+- Scheme `http`, Forward hostname `background-sync-server` (same Docker network) or the host's IP, port `2284`
 - In the location's gear (advanced) box: `client_max_body_size 0; proxy_request_buffering off;`
 
 ### Traefik
 
-Labels on the `immich-sync-proxy` service (adjust the entrypoint and cert resolver to yours). The
+Labels on the `background-sync-server` service (adjust the entrypoint and cert resolver to yours). The
 longer rule wins over Immich's own router automatically:
 
 ```yaml
     labels:
       - traefik.enable=true
-      - traefik.http.routers.immich-sync.rule=Host(`photos.example.com`) && Path(`/api/assets/background`)
-      - traefik.http.routers.immich-sync.entrypoints=websecure
-      - traefik.http.routers.immich-sync.tls.certresolver=letsencrypt
-      - traefik.http.services.immich-sync.loadbalancer.server.port=2284
+      - traefik.http.routers.background-sync.rule=Host(`photos.example.com`) && Path(`/api/assets/background`)
+      - traefik.http.routers.background-sync.entrypoints=websecure
+      - traefik.http.routers.background-sync.tls.certresolver=letsencrypt
+      - traefik.http.services.background-sync.loadbalancer.server.port=2284
 ```
 
 ### Tailscale Serve
@@ -108,7 +108,7 @@ tailscale serve --bg --set-path /api/assets/background http://127.0.0.1:2284
 ### Cloudflare Tunnel
 
 Add a public hostname rule **above** Immich's: same hostname, path `^/api/assets/background$`, service
-`http://immich-sync-proxy:2284` (or `localhost:2284`). Note: Cloudflare's free plan rejects uploads over
+`http://background-sync-server:2284` (or `localhost:2284`). Note: Cloudflare's free plan rejects uploads over
 100 MB, so long videos fail there (the same limit applies to Immich's own app).
 
 ## 3. Check from outside
@@ -132,10 +132,10 @@ In the app, **Settings > Immich server > Save and check** runs the same test and
 | Container log says `immich unreachable` | `IMMICH_URL` is wrong from inside the container. |
 | Nothing uploads, no errors | Settings: Background upload and Upload new photos both on? Advanced > "Upload newest photo (test)" forces a run. |
 
-The container logs one line per upload: `docker logs immich-sync-proxy`.
+The container logs one line per upload: `docker logs background-sync-server`.
 
 ## Updating
 
-`docker compose pull immich-sync-proxy && docker compose up -d`. Each app release says in the
+`docker compose pull background-sync-server && docker compose up -d`. Each app release says in the
 changelog when it needs a newer container; older containers keep working with older app versions.
 Immich upgrades: the container uses Immich's public asset and stack APIs, checked against Immich v3.3.

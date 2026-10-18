@@ -1,4 +1,4 @@
-# Immich Sync for iPhone
+# Background Sync for Immich
 
 Two-way sync between your iPhone's Photos library and your own [Immich](https://immich.app) server,
 running in the background even when the app is closed.
@@ -12,7 +12,10 @@ running in the background even when the app is closed.
 - **Live Photos** arrive paired, **videos** too. Albums, favorites and shared links survive edits.
 - **Already using the Immich app?** Your existing library is matched by checksum, so nothing uploads twice.
 
-Keep the official Immich app for browsing; turn its own backup off.
+Keep the official Immich app for browsing; turn its own backup off. On the home screen the app is
+called **BG Sync**.
+
+> An independent community project, not affiliated with or endorsed by Immich or FUTO.
 
 > **Status:** works daily for the author. It is a sideloaded app (not on the App Store) and
 > needs one small extra container on your Immich server. Read the requirements before you start.
@@ -28,15 +31,15 @@ Keep the official Immich app for browsing; turn its own backup off.
 ## 1. Add the companion container to your server
 
 iOS's background upload can only send a plain file, and Immich only takes form uploads, so a small
-container next to Immich (`immich-sync-proxy`) converts between the two. It runs on your server, stores
+container next to Immich (`background-sync-server`) converts between the two. It runs on your server, stores
 nothing and uses your own API key. About 5 minutes if you run Immich with Docker Compose:
 
 1. Add the service to Immich's `docker-compose.yml` and `docker compose up -d`:
 
    ```yaml
-     immich-sync-proxy:
-       container_name: immich-sync-proxy
-       image: ghcr.io/dddd-zdf/immich-sync-proxy:latest
+     background-sync-server:
+       container_name: background-sync-server
+       image: ghcr.io/dddd-zdf/background-sync-for-immich-server:latest
        restart: always
        environment:
          LISTEN_ADDR: 0.0.0.0:2284
@@ -61,7 +64,7 @@ nothing and uses your own API key. About 5 minutes if you run Immich with Docker
 
 ## 2. Install the app
 
-Download `ImmichSync-<version>.ipa` from [Releases](../../releases) and sideload it your usual way.
+Download `BackgroundSync-<version>.ipa` from [Releases](../../releases) and sideload it your usual way.
 Updating over an existing install keeps your settings.
 
 **Your signer must handle the extension.** The upload extension is an ExtensionKit extension, which
@@ -74,7 +77,7 @@ account is in the works.
 If your sideloading app reads AltStore/SideStore sources, add this one for updates:
 
 ```
-https://github.com/dddd-zdf/immich-backup/releases/latest/download/source.json
+https://github.com/dddd-zdf/background-sync-for-immich/releases/latest/download/source.json
 ```
 
 ## 3. Set it up
@@ -148,4 +151,4 @@ How it works inside (edit detection, Live Photo pairing, the proxy's headers, bu
 
 ## License
 
-MIT. Not affiliated with Immich or FUTO.
+MIT. Not affiliated with or endorsed by Immich or FUTO; "Immich" here only names the server it works with.

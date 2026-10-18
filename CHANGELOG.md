@@ -2,6 +2,10 @@
 
 ## 0.7.0 (2026-10-18): choose how it syncs; ready to share
 
+- New name: **Background Sync for Immich** ("BG Sync" on the home screen), so it isn't mistaken for an
+  official Immich app. Repo `dddd-zdf/background-sync-for-immich`, server container
+  `ghcr.io/dddd-zdf/background-sync-for-immich-server`. Bundle IDs are unchanged, so it installs over
+  the old app with settings kept.
 - New settings, so sync can be set up your way:
   - Upload: Videos, Screenshots, Older photos (photos from before upload was turned on that Immich lacks).
     These only hold back new uploads; edits of photos already in Immich still sync.

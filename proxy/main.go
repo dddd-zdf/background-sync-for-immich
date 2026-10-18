@@ -1,4 +1,4 @@
-// immich-backup-proxy turns PhotoKit background uploads into Immich uploads.
+// background-sync-server turns PhotoKit background uploads into Immich uploads.
 //
 // PhotoKit sends the photo as the raw request body, with our metadata in headers.
 // Immich only accepts multipart/form-data on POST /api/assets, so this streams the

@@ -1,11 +1,11 @@
-# Immich Sync: how it works
+# Background Sync for Immich: how it works
 
 Developer notes. For installing and using the app, see the [README](../README.md).
-(Repo and bundle IDs keep the old name, Immich Backup.)
+(Bundle IDs and target names keep the first name, Immich Backup.)
 
 ```
 iPhone: PhotoKit runs UploadExtension -> raw POST <server>/api/assets/background
-  -> reverse proxy -> immich-sync proxy (:2284) -> multipart POST /api/assets -> Immich
+  -> reverse proxy -> background-sync-server (:2284) -> multipart POST /api/assets -> Immich
 ```
 
 - `App/`: SwiftUI host app (settings, enable the extension, status, log).
@@ -27,8 +27,8 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
 ## Build
 
 Push to `main` (or run the "iOS build" workflow); the `ipa-N` artifact has
-`ImmichSync-<version>.ipa`. Pushing a `v*` tag also attaches the IPA to a GitHub release and
-publishes the proxy image `ghcr.io/dddd-zdf/immich-sync-proxy`. Bump `MARKETING_VERSION` in
+`BackgroundSync-<version>.ipa`. Pushing a `v*` tag also attaches the IPA to a GitHub release and
+publishes the proxy image `ghcr.io/dddd-zdf/background-sync-for-immich-server`. Bump `MARKETING_VERSION` in
 `project.yml` and add a CHANGELOG entry first.
 
 Tested on iOS 27 with a free Apple account and the patched SideStore 0.7.0-extfix.2: photos reach
@@ -96,7 +96,7 @@ edit replace (which trashes the old Immich asset) never deletes the iPhone photo
   re-enables the extension to get an immediate run.
 - iOS may call `willTerminate()` and then reuse the same instance; the stop flag is reset per run.
 - Debug with the app's Log screen (extension and app write to `log.txt` in the app group) and
-  the proxy's container log (`docker logs immich-sync-proxy`).
+  the proxy's container log (`docker logs background-sync-server`).
 
 ## SideStore and ExtensionKit
 

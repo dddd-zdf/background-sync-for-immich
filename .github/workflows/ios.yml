@@ -53,7 +53,7 @@ jobs:
           codesign -f -s - --generate-entitlement-der --entitlements UploadExtension/UploadExtension.entitlements "$APP/Extensions/UploadExtension.appex"
           codesign -f -s - --generate-entitlement-der --entitlements App/App.entitlements "$APP"
           VERSION=$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist")
-          (cd out && zip -qry "ImmichSync-$VERSION.ipa" Payload)
+          (cd out && zip -qry "BackgroundSync-$VERSION.ipa" Payload)
           codesign -d --entitlements - "$APP/Extensions/UploadExtension.appex"
           ls -la out/*.ipa
 

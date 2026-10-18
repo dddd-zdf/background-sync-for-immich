@@ -1,3 +1,3 @@
-module immich-backup-proxy
+module background-sync-server
 
 go 1.24

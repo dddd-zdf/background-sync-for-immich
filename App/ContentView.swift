@@ -81,7 +81,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("Immich Sync")
+            .navigationTitle("Background Sync")
             .toolbar {
                 NavigationLink {
                     SettingsView()

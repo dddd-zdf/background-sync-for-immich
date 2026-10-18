@@ -4,4 +4,4 @@ out/
 DerivedData/
 .DS_Store
 xcuserdata/
-proxy/immich-backup-proxy
+proxy/background-sync-server

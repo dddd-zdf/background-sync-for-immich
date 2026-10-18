@@ -1,5 +1,6 @@
 # XcodeGen spec. CI runs `xcodegen generate`; the .xcodeproj is not committed.
-# The app is called Immich Sync; target names and bundle IDs keep the old "ImmichBackup" spelling.
+# The app is Background Sync for Immich ("BG Sync" on the home screen); target names and bundle IDs keep
+# the first name, "ImmichBackup".
 # Bundle IDs below are FIXED: every new ID costs one of the free account's App IDs.
 name: ImmichBackup
 options:
@@ -31,13 +32,13 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Immich Sync
+        CFBundleDisplayName: BG Sync
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIRequiresFullScreen: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        NSPhotoLibraryUsageDescription: Immich Sync keeps your photos in sync with your Immich server, uploading new ones and syncing deletions.
+        NSPhotoLibraryUsageDescription: Background Sync keeps your photos in sync with your Immich server, uploading new ones and syncing deletions.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.difei.immichbackup
@@ -56,7 +57,7 @@ targets:
     info:
       path: UploadExtension/Info.plist
       properties:
-        CFBundleDisplayName: Immich Sync Upload
+        CFBundleDisplayName: BG Sync Upload
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Apple requires this for "network access validation"; it is not the upload URL
