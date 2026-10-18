@@ -226,7 +226,6 @@ struct SettingsView: View {
 
 struct DiagnosticsView: View {
     @ObservedObject private var model = AppModel.shared
-    @State private var directUpload = Settings.directUpload
     @State private var sendDebugLog = Settings.sendDebugLog
 
     var body: some View {
@@ -258,13 +257,6 @@ struct DiagnosticsView: View {
                 }
             }
             Section {
-                Toggle("Upload without the server container", isOn: Binding(
-                    get: { directUpload },
-                    set: { on in
-                        directUpload = on
-                        Settings.directUpload = on
-                        SharedLog.write("app", "direct upload \(on ? "on" : "off")")
-                    }))
                 Toggle("Send debug log to the server", isOn: Binding(
                     get: { sendDebugLog },
                     set: { on in
@@ -273,9 +265,9 @@ struct DiagnosticsView: View {
                         SharedLog.write("app", "send debug log \(on ? "on" : "off")")
                     }))
             } header: {
-                Text("Experiments")
+                Text("Developer")
             } footer: {
-                Text("Without the server container, the iPhone builds each upload itself and sends it straight to Immich (it needs some free space for a copy of the file while it goes). The debug log goes to the server container, which prints it for whoever runs the server.")
+                Text("Sends this log to a debug receiver on your server as well. Only useful if you run one (see the project's developer notes); leave it off otherwise.")
             }
             Section("Recent") {
                 ForEach(model.snapshot.state.recent.prefix(15), id: \.self) {

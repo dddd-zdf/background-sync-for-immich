@@ -5,7 +5,7 @@ import Photos
 enum Settings {
     private static var d: UserDefaults { AppGroup.defaults }
 
-    /// e.g. https://photos.example.com (the proxy route lives under it).
+    /// e.g. https://photos.example.com.
     static var serverURL: String {
         get { d.string(forKey: "serverURL") ?? "" }
         set { d.set(normalized(newValue), forKey: "serverURL") }
@@ -134,16 +134,11 @@ enum Settings {
         set { d.set(newValue, forKey: "retryFailedRequested") }
     }
 
-    /// Debug: send the log to the server too (the companion container prints it). Off by default.
+    /// Developer option: send the log to a debug receiver at the server address (proxy/, which prints
+    /// it; not part of a normal setup). Off by default.
     static var sendDebugLog: Bool {
         get { d.bool(forKey: "sendDebugLog") }
         set { d.set(newValue, forKey: "sendDebugLog") }
-    }
-
-    /// Experimental: upload straight to Immich (`DirectUpload`), no companion container needed.
-    static var directUpload: Bool {
-        get { d.bool(forKey: "directUpload") }
-        set { d.set(newValue, forKey: "directUpload") }
     }
 
     /// One-shot request from the app: upload the newest photo once.

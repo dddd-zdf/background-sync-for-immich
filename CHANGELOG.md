@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0: no server setup
+
+- Every upload now goes straight from the iPhone to Immich (tested in 0.8 as an experiment: Live Photos,
+  edits, reverts, a 238 MB video). Nothing to install on the server: no container, no reverse proxy route.
+  The setting and the companion container are gone from the setup; server owners can remove
+  `background-sync-server` and its route.
+- Uploads left in flight by an older version are still finished and recorded.
+- Save and check only checks Immich and the API key.
+- "Send debug log to the server" stays as a developer option (needs the author's debug receiver).
+- Who must act: the user updates. Optional: remove the container and its reverse proxy route.
+
 ## 0.8.1 (nightly): faster uploads without the server container
 
 - Direct uploads: iOS only came back to the extension every 5-10 minutes, so a Live Photo or an edit

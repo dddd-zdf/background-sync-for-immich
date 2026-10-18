@@ -1,6 +1,6 @@
 import Foundation
 
-/// The few Immich API calls the app makes itself (uploads go through the extension and proxy).
+/// The few Immich API calls the app makes itself (uploads go through the extension).
 enum Immich {
     struct Asset: Decodable {
         let id: String

@@ -9,10 +9,10 @@ import UniformTypeIdentifiers
 /// Each job uploads one file. A Live Photo takes two jobs in sequence: its video first, then,
 /// once the video's Immich ID is known, the still with `X-Live-Photo-Video-Id` so Immich pairs them.
 ///
-/// Two ways to send a file (Settings.directUpload): PhotoKit upload jobs to the companion container,
-/// which turns the raw file into Immich's multipart upload and does the follow-up calls; or
-/// (experimental) `DirectUpload`, which builds the multipart body here, sends it straight to Immich
-/// with a background URLSession, and does the follow-up calls itself (`followUp`). Both end in `record`.
+/// Files go straight to Immich (`DirectUpload`): the multipart body is built here and sent with a
+/// background URLSession, then the follow-up calls (stacks, replacing an edit) are made here too
+/// (`followUp`). Up to 0.8 PhotoKit upload jobs went to a companion container instead; jobs left from
+/// those versions are still acknowledged (`acknowledgeFinishedJobs`). Both end in `record`.
 @main
 final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     private let cancelled = Flag()
@@ -59,19 +59,17 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             await trashDeletedOnPhone(&state)
             await findEdits(&state)
             var created = try await createJobs(&state)
-            if Settings.directUpload {
-                // Unlike PhotoKit jobs, a finished direct transfer doesn't make iOS call us again soon
-                // (it came back after 5-10 minutes), so wait here for this run's transfers: a Live
-                // Photo's still or an edit's render can then go in the same run. Big files finish later.
-                let deadline = Date().addingTimeInterval(25)
-                while state.inflight.keys.contains(where: { $0.hasPrefix(DirectUpload.keyPrefix) }),
-                      Date() < deadline, !cancelled.value {
-                    try? await Task.sleep(for: .seconds(1))
-                    guard DirectUpload.hasResults() else { continue }
-                    await applyDirectResults(&state)
-                    state.save()  // results are consumed; don't lose them if iOS stops us here
-                    created += try await createJobs(&state)
-                }
+            // A finished transfer doesn't make iOS call us again soon (it came back after 5-10
+            // minutes), so wait here for this run's transfers: a Live Photo's still or an edit's
+            // render can then go in the same run. Big files finish later.
+            let deadline = Date().addingTimeInterval(25)
+            while state.inflight.keys.contains(where: { $0.hasPrefix(DirectUpload.keyPrefix) }),
+                  Date() < deadline, !cancelled.value {
+                try? await Task.sleep(for: .seconds(1))
+                guard DirectUpload.hasResults() else { continue }
+                await applyDirectResults(&state)
+                state.save()  // results are consumed; don't lose them if iOS stops us here
+                created += try await createJobs(&state)
             }
             let active = !state.inflight.isEmpty
             SharedLog.write("ext", "processJobs done: created \(created), inflight \(state.inflight.count)")
@@ -110,7 +108,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     }
 
     /// Direct uploads that finished (in this process, or in the app, which iOS may wake for them).
-    /// The follow-up calls the container would make happen here, then the same `record`.
+    /// The follow-up calls (`followUp`) happen here, then `record`.
     private func applyDirectResults(_ state: inout UploadState) async {
         let base = URL(string: Settings.serverURL)
         for result in DirectUpload.takeResults() {
@@ -135,7 +133,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     }
 
     /// One finished upload: `sent` is the request as built by `destination`, `response` the result
-    /// headers (from the container, or made up by `applyDirectResults` in the same shape).
+    /// headers (from `applyDirectResults`; PhotoKit jobs left from 0.8 and older report the same headers).
     private func record(sent: URLRequest, response headers: [String: String], key: String, how: String,
                         error: String?, _ state: inout UploadState) {
         let assetID = sent.value(forHTTPHeaderField: Header.assetID) ?? state.inflight[key] ?? "?"
@@ -181,7 +179,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         SharedLog.write("ext", "\(how) \(part.rawValue) \(file) immich \(status) \(result) \(immichID)\(replaced)\(error.map { " \($0)" } ?? "")")
     }
 
-    // MARK: - Follow-up calls (what the container does after an upload; see proxy/main.go)
+    // MARK: - Follow-up calls after an upload
 
     private func followUp(sent: URLRequest, id: String, result: String, base: URL) async -> [String: String] {
         var headers: [String: String] = [:]
@@ -318,7 +316,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     // MARK: - Edits
 
     /// Finds uploaded assets edited since their upload. Their next upload replaces the old
-    /// Immich asset (the proxy copies albums over, then trashes the old one). A Live Photo's
+    /// Immich asset (`followUp` copies albums over, then trashes the old one). A Live Photo's
     /// video is sent again too; Immich deletes the old video with the old still once nothing uses it.
     /// `modificationDate` also changes for favorites, albums and Photos' own analysis, so an
     /// edit is confirmed by a change in the asset's adjustment data.
@@ -435,12 +433,11 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             SharedLog.write("ext", "no server URL or API key; nothing to do")
             return 0
         }
-        let direct = Settings.directUpload
-        // Direct uploads write a temporary copy of each file first, so fewer at once.
-        let slots = max(0, (direct ? 10 : min(PHAssetResourceUploadJob.jobLimit, 20)) - state.inflight.count)
+        // Each upload writes a temporary copy of its file first, so 10 at once.
+        let slots = max(0, 10 - state.inflight.count)
         guard slots > 0 else { return 0 }
 
-        // An asset with a job in flight waits: a Live Photo's still goes only after its video.
+        // An asset with an upload in flight waits: a Live Photo's still goes only after its video.
         var picked = Set(state.inflight.values)
         var assets: [PHAsset] = []
         func add(_ asset: PHAsset) {
@@ -503,30 +500,16 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             }
             let (resource, part) = next
             let request = await destination(url: url, asset: asset, resource: resource, part: part, state: state)
-            if direct {
-                do {
-                    let key = try await DirectUpload.queue(request, resource: resource, session: directSession)
-                    state.inflight[key] = asset.localIdentifier
-                    created += 1
-                    SharedLog.write("ext", "queued direct \(part.rawValue) \(request.value(forHTTPHeaderField: Header.filename)?.removingPercentEncoding ?? "?")")
-                } catch {
-                    let count = (state.failed[asset.localIdentifier]?.count ?? 0) + 1
-                    state.failed[asset.localIdentifier] = .init(count: count, reason: error.localizedDescription,
-                                                                file: asset.localIdentifier, date: Date())
-                    SharedLog.write("ext", "direct upload not queued: \(error.localizedDescription)")
-                }
-                continue
-            }
-            var jobID: String?
-            try PHPhotoLibrary.shared().performChangesAndWait {
-                jobID = PHAssetResourceUploadJobChangeRequest
-                    .creationRequestForJob(destination: request, resource: resource)
-                    .placeholderForCreatedAssetResourceUploadJob?.localIdentifier
-            }
-            if let jobID {
-                state.inflight[jobID] = asset.localIdentifier
+            do {
+                let key = try await DirectUpload.queue(request, resource: resource, session: directSession)
+                state.inflight[key] = asset.localIdentifier
                 created += 1
-                SharedLog.write("ext", "queued \(part.rawValue) \(request.value(forHTTPHeaderField: Header.filename) ?? "?") as job \(jobID)")
+                SharedLog.write("ext", "queued direct \(part.rawValue) \(request.value(forHTTPHeaderField: Header.filename)?.removingPercentEncoding ?? "?")")
+            } catch {
+                let count = (state.failed[asset.localIdentifier]?.count ?? 0) + 1
+                state.failed[asset.localIdentifier] = .init(count: count, reason: error.localizedDescription,
+                                                            file: asset.localIdentifier, date: Date())
+                SharedLog.write("ext", "direct upload not queued: \(error.localizedDescription)")
             }
         }
         return created
@@ -548,7 +531,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     /// - a Live Photo's video until it has an Immich ID (an edit that left the video alone reuses
     ///   the original's),
     /// - then the version you see in Photos (the edited render if there is one, else the original).
-    ///   An edit's render is stacked on top of the original by the proxy.
+    ///   An edit's render is stacked on top of the original by `followUp`.
     private func nextUpload(of asset: PHAsset, _ state: UploadState) -> (PHAssetResource, Part)? {
         let id = asset.localIdentifier
         let resources = PHAssetResource.assetResources(for: asset)
@@ -611,7 +594,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             let video = state.liveVideos[id] ?? (edited ? state.originalVideos[id] : nil)
             request.setValue(video, forHTTPHeaderField: "X-Live-Photo-Video-Id")
             request.setValue(state.replacing[id], forHTTPHeaderField: Header.replace)
-            // The proxy stacks the render on top of the original.
+            // `followUp` stacks the render on top of the original.
             if edited { request.setValue(state.originals[id], forHTTPHeaderField: Header.stackOriginal) }
             // Read back on acknowledge to record which version was uploaded (edit detection).
             request.setValue(String(modified.timeIntervalSince1970), forHTTPHeaderField: Header.modified)

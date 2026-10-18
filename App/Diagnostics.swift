@@ -52,10 +52,9 @@ enum Diagnostics {
     static let requiredPermissions = ["asset.upload", "asset.read", "asset.copy", "asset.delete", "user.read",
                                       "stack.create", "stack.read", "stack.delete"]
 
-    /// Checks the API key against Immich, then that the upload proxy answers PhotoKit's
-    /// preflight (it must reply 501 so PhotoKit uses a plain, non-resumable upload).
+    /// Checks the API key against Immich and lists any permissions it's missing.
     static func checkServer() async -> String {
-        guard let base = URL(string: Settings.serverURL), let upload = Settings.uploadURL else { return "Invalid URL" }
+        guard let base = URL(string: Settings.serverURL) else { return "Invalid URL" }
         var lines: [String] = []
 
         var me = URLRequest(url: base.appendingPathComponent("api/users/me"))
@@ -79,19 +78,6 @@ enum Diagnostics {
             lines.append(missing.isEmpty ? "API key: ok" : "API key is missing: " + missing.joined(separator: ", "))
         }
 
-        if Settings.directUpload {
-            lines.append("Upload proxy: not used (uploading without the server container)")
-            return lines.joined(separator: "\n")
-        }
-        var preflight = URLRequest(url: upload)
-        preflight.httpMethod = "OPTIONS"
-        do {
-            let (_, response) = try await URLSession.shared.data(for: preflight)
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            lines.append(code == 501 ? "Upload proxy: ok" : "Upload proxy: HTTP \(code) (expected 501)")
-        } catch {
-            lines.append("Upload proxy: \(error.localizedDescription)")
-        }
         return lines.joined(separator: "\n")
     }
 }
