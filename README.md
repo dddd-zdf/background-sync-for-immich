@@ -23,9 +23,7 @@ Keep the official Immich app for browsing; turn its own backup off.
 - Your own **Immich** server (tested with Immich v3.3).
 - Access to your Immich server to add one small Docker container and one reverse proxy route
   (below). Immich must be reachable over HTTPS from wherever your iPhone is.
-- A computer for sideloading once: **SideStore** with a free Apple account works.
-  The app has an ExtensionKit extension that official SideStore can't sign yet, so use the
-  [patched SideStore](https://github.com/dddd-zdf/sidestore-extfix/releases) until the fix is upstream.
+- A way to sideload an IPA whose signer also signs its **ExtensionKit extension** (see below).
 
 ## 1. Add the companion container to your server
 
@@ -63,18 +61,21 @@ nothing and uses your own API key. About 5 minutes if you run Immich with Docker
 
 ## 2. Install the app
 
-1. Install the [patched SideStore](https://github.com/dddd-zdf/sidestore-extfix/releases) (same steps as
-   regular SideStore).
-2. In SideStore, **Sources > +** and add this source, then install **Immich Sync** from it.
-   SideStore then shows updates as they're released (updating keeps your settings).
+Download `ImmichSync-<version>.ipa` from [Releases](../../releases) and sideload it your usual way.
+Updating over an existing install keeps your settings.
 
-   ```
-   https://github.com/dddd-zdf/immich-backup/releases/latest/download/source.json
-   ```
+**Your signer must handle the extension.** The upload extension is an ExtensionKit extension, which
+lives in the app's `Extensions/` folder (not the older `PlugIns/`), and it needs the same App Group as the
+app. Signers that only look in `PlugIns/` leave it unsigned and the install fails; as of October 2026 that
+includes official SideStore and iloader. Signing with your own certificate (a paid Apple developer
+account, with a tool that re-signs every nested bundle) should work, but the author hasn't tested it. A patched SideStore that signs it with a free
+account is in the works.
 
-   Or download `ImmichSync-<version>.ipa` from [Releases](../../releases) and open it in SideStore.
+If your sideloading app reads AltStore/SideStore sources, add this one for updates:
 
-Free Apple accounts must refresh sideloaded apps every 7 days; SideStore does this for you.
+```
+https://github.com/dddd-zdf/immich-backup/releases/latest/download/source.json
+```
 
 ## 3. Set it up
 
