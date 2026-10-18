@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""Writes the SideStore/AltStore source for a release: sidestore-source.py <tag> <ipa> <notes-file> <out>.
+"""Writes a SideStore/AltStore source: sidestore-source.py <stable|nightly> <tag> <ipa> <notes-file> <out>.
 
-Published as a release asset, so the source URL is always
-https://github.com/<repo>/releases/latest/download/source.json
-Lists this release first, then every earlier release that has an IPA (read with `gh`).
+Published as a release asset, so the URLs never change:
+- stable:  https://github.com/<repo>/releases/latest/download/source.json
+  (this release first, then every earlier non-prerelease release with an IPA, read with `gh`)
+- nightly: https://github.com/<repo>/releases/download/nightly/source.json
+  (just the newest build from main)
+Both use the app's real bundle ID, so switching channels is an ordinary update. BUILD_NUMBER is the
+IPA's CFBundleVersion, which tells builds of the same version apart.
 """
 import datetime, json, os, subprocess, sys
 
-tag, ipa, notes_file, out = sys.argv[1:5]
+channel, tag, ipa, notes_file, out = sys.argv[1:6]
+nightly = channel == "nightly"
+build = os.environ.get("BUILD_NUMBER", "1")
 repo = os.environ.get("GITHUB_REPOSITORY", "dddd-zdf/background-sync-for-immich")
-version = tag.lstrip("v")
+version = os.environ.get("APP_VERSION") or tag.lstrip("v")
 raw = f"https://raw.githubusercontent.com/{repo}/main"
 notes = open(notes_file, encoding="utf-8").read().strip()
 
@@ -25,7 +31,7 @@ def earlier_versions():
     versions = []
     for r in releases:
         ipa_assets = [a for a in r.get("assets", []) if a["name"].endswith(".ipa")]
-        if r["tag_name"] == tag or r.get("draft") or not ipa_assets:
+        if r["tag_name"] == tag or r.get("draft") or r.get("prerelease") or not ipa_assets:
             continue
         versions.append({
             "version": r["tag_name"].lstrip("v"),
@@ -38,8 +44,8 @@ def earlier_versions():
     return versions
 
 source = {
-    "name": "Background Sync for Immich",
-    "identifier": "io.github.dddd-zdf.background-sync-for-immich",
+    "name": "Background Sync for Immich" + (" (nightly)" if nightly else ""),
+    "identifier": "io.github.dddd-zdf.background-sync-for-immich" + (".nightly" if nightly else ""),
     "subtitle": "Two-way iPhone Photos sync for Immich",
     "website": f"https://github.com/{repo}",
     "iconURL": f"{raw}/App/Assets.xcassets/AppIcon.appiconset/icon.png",
@@ -60,12 +66,13 @@ source = {
         "category": "photo-video",
         "versions": [{
             "version": version,
+            "buildVersion": build,
             "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "localizedDescription": notes,
             "downloadURL": f"https://github.com/{repo}/releases/download/{tag}/{os.path.basename(ipa)}",
             "size": os.path.getsize(ipa),
             "minOSVersion": "27.0",
-        }] + earlier_versions(),
+        }] + ([] if nightly else earlier_versions()),
         "appPermissions": {
             "entitlements": ["com.apple.security.application-groups"],
             "privacy": {

@@ -85,11 +85,14 @@ includes official SideStore and iloader. Signing with your own certificate (a pa
 account, with a tool that re-signs every nested bundle) should work, but the author hasn't tested it. A patched SideStore that signs it with a free
 account is in the works.
 
-If your sideloading app reads AltStore/SideStore sources, add this one for updates:
+If your sideloading app reads AltStore/SideStore sources, add one for updates:
 
-```
-https://github.com/dddd-zdf/background-sync-for-immich/releases/latest/download/source.json
-```
+| Channel | Source URL |
+|---|---|
+| Stable (tagged releases) | `https://github.com/dddd-zdf/background-sync-for-immich/releases/latest/download/source.json` |
+| Nightly (every app change on `main`, less tested) | `https://github.com/dddd-zdf/background-sync-for-immich/releases/download/nightly/source.json` |
+
+Both install the same app, so switching channels is an ordinary update that keeps your settings.
 
 ## 3. Set it up
 
