@@ -266,3 +266,30 @@ func TestOriginalRestoredFromTrash(t *testing.T) {
 		}
 	}
 }
+
+func TestDebugLog(t *testing.T) {
+	immich := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/users/me" {
+			t.Errorf("unexpected %s", r.URL.Path)
+		}
+		if r.Header.Get("x-api-key") != "key123" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		io.WriteString(w, `{"id":"0123456789abcdef"}`)
+	}))
+	defer immich.Close()
+	handler := logHandler(immich.URL, http.DefaultClient)
+	for key, want := range map[string]int{"key123": http.StatusNoContent, "wrong": http.StatusUnauthorized} {
+		req := httptest.NewRequest(http.MethodPost, "/api/assets/background", strings.NewReader("line one
+line two
+"))
+		req.Header.Set("x-api-key", key)
+		req.Header.Set("X-Debug-Log", "1")
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		if rec.Code != want {
+			t.Errorf("key %s: got %d, want %d", key, rec.Code, want)
+		}
+	}
+}

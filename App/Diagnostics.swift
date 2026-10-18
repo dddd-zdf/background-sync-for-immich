@@ -79,6 +79,10 @@ enum Diagnostics {
             lines.append(missing.isEmpty ? "API key: ok" : "API key is missing: " + missing.joined(separator: ", "))
         }
 
+        if Settings.directUpload {
+            lines.append("Upload proxy: not used (uploading without the server container)")
+            return lines.joined(separator: "\n")
+        }
         var preflight = URLRequest(url: upload)
         preflight.httpMethod = "OPTIONS"
         do {

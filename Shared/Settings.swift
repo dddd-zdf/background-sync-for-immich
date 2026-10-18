@@ -134,10 +134,16 @@ enum Settings {
         set { d.set(newValue, forKey: "retryFailedRequested") }
     }
 
-    /// One-shot request from the app: the no-container upload experiment (`DirectUpload`).
-    static var directTestRequested: Bool {
-        get { d.bool(forKey: "directTestRequested") }
-        set { d.set(newValue, forKey: "directTestRequested") }
+    /// Debug: send the log to the server too (the companion container prints it). Off by default.
+    static var sendDebugLog: Bool {
+        get { d.bool(forKey: "sendDebugLog") }
+        set { d.set(newValue, forKey: "sendDebugLog") }
+    }
+
+    /// Experimental: upload straight to Immich (`DirectUpload`), no companion container needed.
+    static var directUpload: Bool {
+        get { d.bool(forKey: "directUpload") }
+        set { d.set(newValue, forKey: "directUpload") }
     }
 
     /// One-shot request from the app: upload the newest photo once.

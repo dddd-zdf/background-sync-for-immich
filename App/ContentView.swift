@@ -97,6 +97,7 @@ struct ContentView: View {
             .onAppear { model.refresh(); autoSync() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { model.refresh(); autoSync(); removeIfRequested() }
+                if phase == .background { Task { await SharedLog.flush() } }
             }
             .onChange(of: sync.removalRequested) { _, _ in removeIfRequested() }
         }

@@ -8,10 +8,14 @@ import UniformTypeIdentifiers
 ///
 /// Each job uploads one file. A Live Photo takes two jobs in sequence: its video first, then,
 /// once the video's Immich ID is known, the still with `X-Live-Photo-Video-Id` so Immich pairs them.
+///
+/// Two ways to send a file (Settings.directUpload): PhotoKit upload jobs to the companion container,
+/// which turns the raw file into Immich's multipart upload and does the follow-up calls; or
+/// (experimental) `DirectUpload`, which builds the multipart body here, sends it straight to Immich
+/// with a background URLSession, and does the follow-up calls itself (`followUp`). Both end in `record`.
 @main
 final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     private let cancelled = Flag()
-    /// Experiment: uploads without the companion container (`DirectUpload`).
     private let directDelegate = DirectUpload.Delegate(process: "extension")
     private lazy var directSession = DirectUpload.session(id: DirectUpload.newSessionID(), delegate: directDelegate)
     /// The app's links to photos that reached Immich another way (read-only here).
@@ -22,6 +26,12 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
     }
 
     func processJobs() async -> PHBackgroundResourceUploadProcessingResult {
+        let result = await run()
+        await SharedLog.flush()
+        return result
+    }
+
+    private func run() async -> PHBackgroundResourceUploadProcessingResult {
         // iOS can reuse this instance after willTerminate(), so the stop flag is per run.
         cancelled.value = false
         Settings.lastInvocation = Date()
@@ -32,6 +42,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         defer { state.save() }
         do {
             try acknowledgeFinishedJobs(&state)
+            await applyDirectResults(&state)
             guard !cancelled.value else {
                 SharedLog.write("ext", "stopped early (willTerminate)")
                 return .processing
@@ -40,11 +51,6 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
                 Settings.retryFailedRequested = false
                 SharedLog.write("ext", "retrying \(state.failed.count) failed")
                 state.failed = [:]
-            }
-            if Settings.directTestRequested {
-                Settings.directTestRequested = false
-                SharedLog.write("ext", "direct upload test requested")
-                await DirectUpload.startTest(session: directSession)
             }
             if Settings.keepOriginalsRequested {
                 Settings.keepOriginalsRequested = false
@@ -70,7 +76,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         SharedLog.write("ext", "willTerminate")
     }
 
-    // MARK: - Finished jobs
+    // MARK: - Finished uploads
 
     /// Records each finished job's result, then acknowledges it to free a job slot.
     /// Failed jobs are not retried in place; the asset is simply picked up again
@@ -79,56 +85,146 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         let jobs = PHAssetResourceUploadJob.fetchJobs(action: .acknowledge, options: nil)
         for i in 0..<jobs.count {
             let job = jobs.object(at: i)
-            let sent = job.destination
-            let assetID = sent.value(forHTTPHeaderField: Header.assetID) ?? state.inflight[job.localIdentifier] ?? "?"
-            let part = Part(rawValue: sent.value(forHTTPHeaderField: Header.part) ?? "") ?? .main
-            let file = sent.value(forHTTPHeaderField: Header.filename)?.removingPercentEncoding ?? "?"
-            let headers = job.responseHeaderFields ?? [:]
-            let immichID = headers["x-immich-asset-id"] ?? ""
-            let status = headers["x-immich-status"] ?? "-"
-            let result = headers["x-immich-result"] ?? ""
-            let replaced = (headers["x-immich-replaced"].map { " replaced: \($0)" } ?? "")
-                + (headers["x-immich-stacked"].map { " stacked: \($0)" } ?? "")
-                + (headers["x-immich-restored"].map { " restored: \($0)" } ?? "")
-
-            if !immichID.isEmpty {
-                switch part {
-                case .originalVideo:
-                    state.originalVideos[assetID] = immichID
-                case .original:
-                    state.originals[assetID] = immichID
-                case .video:
-                    state.liveVideos[assetID] = immichID
-                case .main:
-                    state.uploaded[assetID] = immichID
-                    // Set when the render reused the original's video instead of uploading one.
-                    if let video = sent.value(forHTTPHeaderField: "X-Live-Photo-Video-Id") { state.liveVideos[assetID] = video }
-                    state.replacing[assetID] = nil
-                    state.requested.remove(assetID)
-                    if let modified = sent.value(forHTTPHeaderField: Header.modified).flatMap(Double.init),
-                       let fingerprint = sent.value(forHTTPHeaderField: Header.fingerprint) {
-                        state.versions[assetID] = .init(modified: Date(timeIntervalSince1970: modified), fingerprint: fingerprint)
-                    }
-                }
-                state.failed[assetID] = nil
-                state.lastUpload = Date()
-                state.note("ok \(result) \(file) -> \(immichID)\(replaced)")
-            } else {
-                let error = job.error.map { "\(($0 as NSError).domain) \(($0 as NSError).code)" }
-                let reason = [status == "-" ? nil : "HTTP \(status)", headers["x-immich-error"], error]
-                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
-                let count = (state.failed[assetID]?.count ?? 0) + 1
-                state.failed[assetID] = .init(count: count, reason: reason.isEmpty ? "no response" : reason, file: file, date: Date())
-                if count >= UploadState.maxAttempts { state.requested.remove(assetID) }
-                state.note("fail \(file) state=\(job.state.rawValue) \(reason)")
-            }
-            SharedLog.write("ext", "job \(job.localIdentifier) \(part.rawValue) state \(job.state.rawValue) immich \(status) \(result) \(immichID)\(replaced)")
-
+            let error = job.error.map { "\(($0 as NSError).domain) \(($0 as NSError).code)" }
+            record(sent: job.destination, response: job.responseHeaderFields ?? [:], key: job.localIdentifier,
+                   how: "job \(job.localIdentifier) state \(job.state.rawValue)", error: error, &state)
             try PHPhotoLibrary.shared().performChangesAndWait {
                 PHAssetResourceUploadJobChangeRequest(for: job)?.acknowledge()
             }
             state.inflight[job.localIdentifier] = nil
         }
+    }
+
+    /// Direct uploads that finished (in this process, or in the app, which iOS may wake for them).
+    /// The follow-up calls the container would make happen here, then the same `record`.
+    private func applyDirectResults(_ state: inout UploadState) async {
+        let base = URL(string: Settings.serverURL)
+        for result in DirectUpload.takeResults() {
+            var response = ["x-immich-status": result.status == 0 ? "-" : String(result.status)]
+            if let id = result.immichID, (200..<300).contains(result.status), let base {
+                response["x-immich-asset-id"] = id
+                response["x-immich-result"] = result.immichResult ?? ""
+                response.merge(await followUp(sent: result.request, id: id, result: result.immichResult ?? "", base: base)) { $1 }
+            } else if let message = result.message {
+                response["x-immich-error"] = message
+            }
+            record(sent: result.request, response: response, key: result.key, how: "direct", error: result.error, &state)
+            state.inflight[result.key] = nil
+        }
+        // A transfer that never reported back (e.g. its session was lost): try again later.
+        for key in state.inflight.keys where key.hasPrefix(DirectUpload.keyPrefix) && DirectUpload.isLost(key) {
+            let request = DirectUpload.request(for: key) ?? URLRequest(url: URL(fileURLWithPath: "/"))
+            record(sent: request, response: [:], key: key, how: "direct", error: "no response within a day", &state)
+            state.inflight[key] = nil
+            DirectUpload.forget(key)
+        }
+    }
+
+    /// One finished upload: `sent` is the request as built by `destination`, `response` the result
+    /// headers (from the container, or made up by `applyDirectResults` in the same shape).
+    private func record(sent: URLRequest, response headers: [String: String], key: String, how: String,
+                        error: String?, _ state: inout UploadState) {
+        let assetID = sent.value(forHTTPHeaderField: Header.assetID) ?? state.inflight[key] ?? "?"
+        let part = Part(rawValue: sent.value(forHTTPHeaderField: Header.part) ?? "") ?? .main
+        let file = sent.value(forHTTPHeaderField: Header.filename)?.removingPercentEncoding ?? "?"
+        let immichID = headers["x-immich-asset-id"] ?? ""
+        let status = headers["x-immich-status"] ?? "-"
+        let result = headers["x-immich-result"] ?? ""
+        let replaced = (headers["x-immich-replaced"].map { " replaced: \($0)" } ?? "")
+            + (headers["x-immich-stacked"].map { " stacked: \($0)" } ?? "")
+            + (headers["x-immich-restored"].map { " restored: \($0)" } ?? "")
+
+        if !immichID.isEmpty {
+            switch part {
+            case .originalVideo:
+                state.originalVideos[assetID] = immichID
+            case .original:
+                state.originals[assetID] = immichID
+            case .video:
+                state.liveVideos[assetID] = immichID
+            case .main:
+                state.uploaded[assetID] = immichID
+                // Set when the render reused the original's video instead of uploading one.
+                if let video = sent.value(forHTTPHeaderField: "X-Live-Photo-Video-Id") { state.liveVideos[assetID] = video }
+                state.replacing[assetID] = nil
+                state.requested.remove(assetID)
+                if let modified = sent.value(forHTTPHeaderField: Header.modified).flatMap(Double.init),
+                   let fingerprint = sent.value(forHTTPHeaderField: Header.fingerprint) {
+                    state.versions[assetID] = .init(modified: Date(timeIntervalSince1970: modified), fingerprint: fingerprint)
+                }
+            }
+            state.failed[assetID] = nil
+            state.lastUpload = Date()
+            state.note("ok \(result) \(file) -> \(immichID)\(replaced)")
+        } else {
+            let reason = [status == "-" ? nil : "HTTP \(status)", headers["x-immich-error"], error]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+            let count = (state.failed[assetID]?.count ?? 0) + 1
+            state.failed[assetID] = .init(count: count, reason: reason.isEmpty ? "no response" : reason, file: file, date: Date())
+            if count >= UploadState.maxAttempts { state.requested.remove(assetID) }
+            state.note("fail \(file) \(how) \(reason)")
+        }
+        SharedLog.write("ext", "\(how) \(part.rawValue) \(file) immich \(status) \(result) \(immichID)\(replaced)\(error.map { " \($0)" } ?? "")")
+    }
+
+    // MARK: - Follow-up calls (what the container does after an upload; see proxy/main.go)
+
+    private func followUp(sent: URLRequest, id: String, result: String, base: URL) async -> [String: String] {
+        var headers: [String: String] = [:]
+        let part = sent.value(forHTTPHeaderField: Header.part) ?? ""
+        // Immich also matches uploads to trashed assets; an edit's original must come back from the trash.
+        if result == "duplicate" && (part == Part.original.rawValue || part == Part.originalVideo.rawValue) {
+            let restored = await immich("POST", "api/trash/restore/assets", body: ["ids": [id]], base: base)
+            headers["x-immich-restored"] = (200..<300).contains(restored.status) ? "ok" : "HTTP \(restored.status)"
+        }
+        let old = sent.value(forHTTPHeaderField: Header.replace) ?? ""
+        if let original = sent.value(forHTTPHeaderField: Header.stackOriginal), !original.isEmpty, original != id {
+            headers["x-immich-stacked"] = await stackEdit(original: original, old: old, new: id, base: base)
+        } else if !old.isEmpty && old != id {
+            headers["x-immich-replaced"] = await replace(old: old, new: id, base: base)
+        }
+        return headers
+    }
+
+    /// Copies albums, shared links and sidecar from the old asset to the new one, then trashes the old one.
+    private func replace(old: String, new: String, base: URL) async -> String {
+        let copied = await immich("PUT", "api/assets/copy", body: ["sourceId": old, "targetId": new, "favorite": false], base: base)
+        if copied.status == 400 && Self.message(copied.data).contains("must exist") { return "ok (old asset already gone)" }
+        guard (200..<300).contains(copied.status) else { return "copy HTTP \(copied.status) \(Self.message(copied.data))" }
+        let trashed = await trashInImmich([old], base: base)
+        return (200..<300).contains(trashed) ? "ok" : "trash HTTP \(trashed)"
+    }
+
+    /// Puts a new render on top of a stack with the original under it; `old` is what stood for the
+    /// photo before (a previous render, trashed, or the original itself, kept).
+    private func stackEdit(original: String, old: String, new: String, base: URL) async -> String {
+        if !old.isEmpty && old != new {
+            let copied = await immich("PUT", "api/assets/copy",
+                                      body: ["sourceId": old, "targetId": new, "stack": false, "favorite": false], base: base)
+            if !(200..<300).contains(copied.status) && !(copied.status == 400 && Self.message(copied.data).contains("must exist")) {
+                return "copy HTTP \(copied.status) \(Self.message(copied.data))"
+            }
+            if old != original {
+                let found = await immich("GET", "api/stacks", query: [URLQueryItem(name: "primaryAssetId", value: old)], base: base)
+                guard (200..<300).contains(found.status) else { return "stack lookup HTTP \(found.status)" }
+                let stacks = (try? JSONSerialization.jsonObject(with: found.data)) as? [[String: Any]] ?? []
+                for case let stack? in stacks.map({ $0["id"] as? String }) {
+                    let removed = await immich("DELETE", "api/stacks/\(stack)", base: base)
+                    guard (200..<300).contains(removed.status) else { return "unstack HTTP \(removed.status)" }
+                }
+            }
+        }
+        let stacked = await immich("POST", "api/stacks", body: ["assetIds": [new, original]], base: base)
+        guard (200..<300).contains(stacked.status) else { return "stack HTTP \(stacked.status) \(Self.message(stacked.data))" }
+        if !old.isEmpty && old != new && old != original {
+            let trashed = await trashInImmich([old], base: base)
+            guard (200..<300).contains(trashed) else { return "trash HTTP \(trashed)" }
+        }
+        return "ok"
+    }
+
+    private static func message(_ data: Data) -> String {
+        ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["message"].map { "\($0)" } ?? ""
     }
 
     // MARK: - Deleted on the iPhone
@@ -325,7 +421,9 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             SharedLog.write("ext", "no server URL or API key; nothing to do")
             return 0
         }
-        let slots = max(0, min(PHAssetResourceUploadJob.jobLimit, 20) - state.inflight.count)
+        let direct = Settings.directUpload
+        // Direct uploads write a temporary copy of each file first, so fewer at once.
+        let slots = max(0, (direct ? 10 : min(PHAssetResourceUploadJob.jobLimit, 20)) - state.inflight.count)
         guard slots > 0 else { return 0 }
 
         // An asset with a job in flight waits: a Live Photo's still goes only after its video.
@@ -391,6 +489,20 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             }
             let (resource, part) = next
             let request = await destination(url: url, asset: asset, resource: resource, part: part, state: state)
+            if direct {
+                do {
+                    let key = try await DirectUpload.queue(request, resource: resource, session: directSession)
+                    state.inflight[key] = asset.localIdentifier
+                    created += 1
+                    SharedLog.write("ext", "queued direct \(part.rawValue) \(request.value(forHTTPHeaderField: Header.filename)?.removingPercentEncoding ?? "?")")
+                } catch {
+                    let count = (state.failed[asset.localIdentifier]?.count ?? 0) + 1
+                    state.failed[asset.localIdentifier] = .init(count: count, reason: error.localizedDescription,
+                                                                file: asset.localIdentifier, date: Date())
+                    SharedLog.write("ext", "direct upload not queued: \(error.localizedDescription)")
+                }
+                continue
+            }
             var jobID: String?
             try PHPhotoLibrary.shared().performChangesAndWait {
                 jobID = PHAssetResourceUploadJobChangeRequest

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.0 (nightly): upload without the server container (experimental)
+
+- Settings > Advanced > Experiments > "Upload without the server container": the iPhone builds Immich's
+  upload itself and sends it straight to Immich with iOS's background transfers, and makes the
+  follow-up calls the container made (edit stacks, replacing an edit, restoring trashed originals).
+  Off by default; the container stays the normal path. Needs free space for a copy of each file while
+  it uploads. The test button from 0.7.1 is gone.
+- "Send debug log to the server" (off by default): log lines also go to the companion container, which
+  prints them (`docker logs background-sync-server`); only callers with a valid Immich API key.
+- Container: accepts those debug lines on the same path (header `X-Debug-Log`); uploads unchanged.
+- Who must act: the server owner updates the container for the debug log
+  (`docker compose pull background-sync-server && docker compose up -d background-sync-server`);
+  the user updates from the nightly source and turns on the experiments to test.
+
 ## 0.7.2 (nightly): experiment fix
 
 - "Test upload without the server container" failed on a second run with NSURLErrorDomain -996: the app

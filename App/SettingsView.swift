@@ -226,6 +226,8 @@ struct SettingsView: View {
 
 struct DiagnosticsView: View {
     @ObservedObject private var model = AppModel.shared
+    @State private var directUpload = Settings.directUpload
+    @State private var sendDebugLog = Settings.sendDebugLog
 
     var body: some View {
         List {
@@ -256,19 +258,24 @@ struct DiagnosticsView: View {
                 }
             }
             Section {
-                Button("Test upload without the server container") {
-                    Settings.directTestRequested = true
-                    SharedLog.write("app", "direct upload test requested")
-                    model.wakeExtension()
-                }
-                .disabled(!model.extensionEnabled)
-                if Settings.directTestRequested {
-                    Text("Waiting for the extension to run").font(.footnote).foregroundStyle(.secondary)
-                }
+                Toggle("Upload without the server container", isOn: Binding(
+                    get: { directUpload },
+                    set: { on in
+                        directUpload = on
+                        Settings.directUpload = on
+                        SharedLog.write("app", "direct upload \(on ? "on" : "off")")
+                    }))
+                Toggle("Send debug log to the server", isOn: Binding(
+                    get: { sendDebugLog },
+                    set: { on in
+                        sendDebugLog = on
+                        Settings.sendDebugLog = on
+                        SharedLog.write("app", "send debug log \(on ? "on" : "off")")
+                    }))
             } header: {
-                Text("Experiment")
+                Text("Experiments")
             } footer: {
-                Text("Sends your newest photo and newest video straight to Immich, building the upload on the iPhone instead of in the server container. Swipe the app away right after tapping, wait a few minutes, then check the Log for \"direct\" lines. Immich will say \"duplicate\" for photos it already has; that still counts.")
+                Text("Without the server container, the iPhone builds each upload itself and sends it straight to Immich (it needs some free space for a copy of the file while it goes). The debug log goes to the server container, which prints it for whoever runs the server.")
             }
             Section("Recent") {
                 ForEach(model.snapshot.state.recent.prefix(15), id: \.self) {

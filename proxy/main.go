@@ -7,6 +7,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -19,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,7 +29,16 @@ func main() {
 	immich := strings.TrimRight(envOr("IMMICH_URL", "http://127.0.0.1:2283"), "/")
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/assets/background", uploadHandler(immich, http.DefaultClient))
+	upload := uploadHandler(immich, http.DefaultClient)
+	debugLog := logHandler(immich, http.DefaultClient)
+	// Same path as uploads, so no extra reverse proxy route: the app's optional debug log.
+	mux.HandleFunc("/api/assets/background", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Debug-Log") != "" {
+			debugLog(w, r)
+			return
+		}
+		upload(w, r)
+	})
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok\n") })
 
 	log.Printf("listening on %s, Immich at %s", listen, immich)
@@ -340,4 +351,59 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// logHandler takes the app's debug log (Settings > Advanced, off by default) and writes each line
+// to this container's log, so a developer can follow a test with `docker logs`. Only callers with an
+// API key Immich accepts are logged; keys are checked once an hour.
+func logHandler(immich string, client *http.Client) http.HandlerFunc {
+	var mu sync.Mutex
+	known := map[string]struct {
+		name  string
+		until time.Time
+	}{}
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		key := r.Header.Get("x-api-key")
+		mu.Lock()
+		entry, ok := known[key]
+		mu.Unlock()
+		if !ok || time.Now().After(entry.until) {
+			req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, immich+"/api/users/me", nil)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			req.Header.Set("x-api-key", key)
+			resp, err := client.Do(req)
+			if err != nil {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			var me struct {
+				ID string `json:"id"`
+			}
+			_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&me)
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK || me.ID == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			entry.name, entry.until = me.ID[:8], time.Now().Add(time.Hour)
+			mu.Lock()
+			known[key] = entry
+			mu.Unlock()
+		}
+		lines := bufio.NewScanner(io.LimitReader(r.Body, 512<<10))
+		lines.Buffer(make([]byte, 64<<10), 64<<10)
+		for lines.Scan() {
+			if text := strings.TrimSpace(lines.Text()); text != "" {
+				log.Printf("phone %s: %s", entry.name, text)
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
 }

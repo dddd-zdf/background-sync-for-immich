@@ -54,6 +54,7 @@ final class DeleteSync: ObservableObject {
         await updateAskNotification()
         await stageAlbum()
         SharedLog.write("sync", result)
+        await SharedLog.flush()
         return result
     }
 
