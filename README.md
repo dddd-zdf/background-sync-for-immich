@@ -15,59 +15,51 @@ running in the background even when the app is closed.
 Keep the official Immich app for browsing; turn its own backup off.
 
 > **Status:** works daily for the author. It is a sideloaded app (not on the App Store) and
-> needs a small proxy next to your Immich server. Read the requirements before you start.
+> needs one small extra container on your Immich server. Read the requirements before you start.
 
 ## Requirements
 
 - iPhone on **iOS 27** or later.
-- An **Immich** server reachable over HTTPS from wherever your iPhone is (tested with Immich v3.3).
-- A place to run one small Docker container next to Immich (the upload proxy, below).
+- Your own **Immich** server (tested with Immich v3.3).
+- Access to your Immich server to add one small Docker container and one reverse proxy route
+  (below). Immich must be reachable over HTTPS from wherever your iPhone is.
 - A computer for sideloading once: **SideStore** with a free Apple account works.
   The app has an ExtensionKit extension that official SideStore can't sign yet, so use the
   [patched SideStore](https://github.com/dddd-zdf/sidestore-extfix/releases) until the fix is upstream.
 
-## 1. Run the upload proxy
+## 1. Add the companion container to your server
 
-PhotoKit can only send a photo as a raw file; Immich only accepts multipart uploads. The proxy
-converts one into the other. It stores nothing and has no keys of its own: every request carries your
-Immich API key.
+iOS's background upload can only send a plain file, and Immich only takes form uploads, so a small
+container next to Immich (`immich-sync-proxy`) converts between the two. It runs on your server, stores
+nothing and uses your own API key. About 5 minutes if you run Immich with Docker Compose:
 
-Add it to your Immich `docker-compose.yml`:
+1. Add the service to Immich's `docker-compose.yml` and `docker compose up -d`:
 
-```yaml
-  immich-sync-proxy:
-    image: ghcr.io/dddd-zdf/immich-sync-proxy:latest
-    restart: unless-stopped
-    environment:
-      LISTEN_ADDR: 0.0.0.0:2284
-      IMMICH_URL: http://immich-server:2283
-    ports:
-      - 127.0.0.1:2284:2284
-```
+   ```yaml
+     immich-sync-proxy:
+       container_name: immich-sync-proxy
+       image: ghcr.io/dddd-zdf/immich-sync-proxy:latest
+       restart: always
+       environment:
+         LISTEN_ADDR: 0.0.0.0:2284
+         IMMICH_URL: http://immich-server:2283
+       ports:
+         - 127.0.0.1:2284:2284
+   ```
 
-Then send **one path** of your Immich site to it in your reverse proxy, everything else stays as is.
+2. In your reverse proxy, send the one path `/api/assets/background` to it. Caddy:
 
-Caddy:
+   ```
+   photos.example.com {
+       reverse_proxy /api/assets/background 127.0.0.1:2284
+       reverse_proxy 127.0.0.1:2283
+   }
+   ```
 
-```
-photos.example.com {
-    reverse_proxy /api/assets/background 127.0.0.1:2284
-    reverse_proxy 127.0.0.1:2283
-}
-```
+3. Check from outside: `curl -i -X OPTIONS https://photos.example.com/api/assets/background` answers `501`.
 
-nginx (inside your Immich `server` block):
-
-```nginx
-location = /api/assets/background {
-    proxy_pass http://127.0.0.1:2284;
-    client_max_body_size 0;
-    proxy_request_buffering off;
-    proxy_read_timeout 600s;
-}
-```
-
-Check: `curl http://127.0.0.1:2284/health` answers `ok`.
+**nginx, Nginx Proxy Manager, Traefik, Tailscale Serve, Cloudflare Tunnel, and troubleshooting:
+[docs/SERVER.md](docs/SERVER.md).**
 
 ## 2. Install the app
 
@@ -140,7 +132,7 @@ the extension for new photos, not for deletions).
 - The **upload extension decides its own schedule**; iOS usually runs it within minutes of a new photo.
   Large backlogs take a while: up to 20 uploads run at once.
 - **Troubleshooting:** Settings > Advanced has a test upload, the extension's run count and a log you
-  can share. The proxy's log is `docker logs immich-sync-proxy`.
+  can share. Server-side problems: [docs/SERVER.md](docs/SERVER.md#troubleshooting).
 - **Albums** are not synced (Immich albums and iPhone albums stay separate). Favorites are set on upload.
 - Works over a VPN (e.g. Tailscale) as long as the iPhone can reach the server when iOS runs the upload.
 
