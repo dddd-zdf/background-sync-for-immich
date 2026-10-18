@@ -3,14 +3,39 @@
 
 Published as a release asset, so the source URL is always
 https://github.com/<repo>/releases/latest/download/source.json
+Lists this release first, then every earlier release that has an IPA (read with `gh`).
 """
-import datetime, json, os, sys
+import datetime, json, os, subprocess, sys
 
 tag, ipa, notes_file, out = sys.argv[1:5]
 repo = os.environ.get("GITHUB_REPOSITORY", "dddd-zdf/background-sync-for-immich")
 version = tag.lstrip("v")
 raw = f"https://raw.githubusercontent.com/{repo}/main"
 notes = open(notes_file, encoding="utf-8").read().strip()
+
+
+def earlier_versions():
+    try:
+        out = subprocess.run(["gh", "api", f"repos/{repo}/releases", "--paginate"],
+                             capture_output=True, text=True, check=True).stdout
+        releases = json.loads(out)
+    except Exception as e:  # no gh or no access: just this version
+        print(f"earlier releases not listed: {e}", file=sys.stderr)
+        return []
+    versions = []
+    for r in releases:
+        ipa_assets = [a for a in r.get("assets", []) if a["name"].endswith(".ipa")]
+        if r["tag_name"] == tag or r.get("draft") or not ipa_assets:
+            continue
+        versions.append({
+            "version": r["tag_name"].lstrip("v"),
+            "date": r.get("published_at") or r["created_at"],
+            "localizedDescription": (r.get("body") or "").strip(),
+            "downloadURL": ipa_assets[0]["browser_download_url"],
+            "size": ipa_assets[0]["size"],
+            "minOSVersion": "27.0",
+        })
+    return versions
 
 source = {
     "name": "Background Sync for Immich",
@@ -40,7 +65,7 @@ source = {
             "downloadURL": f"https://github.com/{repo}/releases/download/{tag}/{os.path.basename(ipa)}",
             "size": os.path.getsize(ipa),
             "minOSVersion": "27.0",
-        }],
+        }] + earlier_versions(),
         "appPermissions": {
             "entitlements": ["com.apple.security.application-groups"],
             "privacy": {
