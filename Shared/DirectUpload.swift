@@ -147,6 +147,11 @@ enum DirectUpload {
         return request
     }
 
+    static func hasResults() -> Bool {
+        guard let directory, let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return false }
+        return names.contains { $0.hasSuffix(".result.json") }
+    }
+
     /// Finished uploads not yet recorded; their files are removed.
     static func takeResults() -> [Result] {
         guard let directory, let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return [] }
@@ -201,6 +206,9 @@ enum DirectUpload {
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
             let body = lock.withLock { bodies.removeValue(forKey: task.taskIdentifier) } ?? Data()
             guard let id = task.taskDescription else { return }
+            // -997: this process lost the session to the other one (the app woken for its events),
+            // which reports the real result. Seen for the extension's old session on its next run.
+            if (error as NSError?)?.domain == NSURLErrorDomain && (error as NSError?)?.code == -997 { return }
             let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
             var result: [String: Any] = ["status": status, "body": body.base64EncodedString()]
             if let error { result["error"] = "\((error as NSError).domain) \((error as NSError).code)" }

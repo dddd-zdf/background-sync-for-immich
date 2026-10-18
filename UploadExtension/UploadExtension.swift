@@ -58,7 +58,21 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
             }
             await trashDeletedOnPhone(&state)
             await findEdits(&state)
-            let created = try await createJobs(&state)
+            var created = try await createJobs(&state)
+            if Settings.directUpload {
+                // Unlike PhotoKit jobs, a finished direct transfer doesn't make iOS call us again soon
+                // (it came back after 5-10 minutes), so wait here for this run's transfers: a Live
+                // Photo's still or an edit's render can then go in the same run. Big files finish later.
+                let deadline = Date().addingTimeInterval(25)
+                while state.inflight.keys.contains(where: { $0.hasPrefix(DirectUpload.keyPrefix) }),
+                      Date() < deadline, !cancelled.value {
+                    try? await Task.sleep(for: .seconds(1))
+                    guard DirectUpload.hasResults() else { continue }
+                    await applyDirectResults(&state)
+                    state.save()  // results are consumed; don't lose them if iOS stops us here
+                    created += try await createJobs(&state)
+                }
+            }
             let active = !state.inflight.isEmpty
             SharedLog.write("ext", "processJobs done: created \(created), inflight \(state.inflight.count)")
             return created > 0 || active ? .processing : .completed

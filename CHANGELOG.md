@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.1 (nightly): faster uploads without the server container
+
+- Direct uploads: iOS only came back to the extension every 5-10 minutes, so a Live Photo or an edit
+  (two uploads in a row) took 15 minutes. The extension now waits up to 25 seconds for its transfers,
+  records them and sends the next part in the same run. State is saved after each step.
+- A transfer reported as "session lost" (-997) by the process that no longer holds it is ignored; the
+  other process reports the real result.
+- Who must act: the user updates from the nightly source.
+
 ## 0.8.0 (nightly): upload without the server container (experimental)
 
 - Settings > Advanced > Experiments > "Upload without the server container": the iPhone builds Immich's
