@@ -186,7 +186,7 @@ final class DeleteSync: ObservableObject {
 
     /// Makes the "Trashed in Immich" album hold exactly the photos waiting to be deleted from the
     /// iPhone, so a Shortcut can delete them with Find Photos (album) > Delete Photos, which with
-    /// "Allow Deleting Without Confirmation" needs no tap. Adding to an album needs no prompt.
+    /// "Allow Deleting Without Confirmation" (Settings > Apps > Shortcuts > Advanced) needs no tap. Adding to an album needs no prompt.
     /// Restored-in-Immich photos drop out. Anything added to the album by hand gets deleted too.
     func stageAlbum() async {
         let wanted = Set(store.pendingRemoval.keys)

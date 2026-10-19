@@ -100,10 +100,13 @@ iOS only lets an app delete photos after a confirmation prompt. To make Immich-t
 fully automatic, the app keeps a **Trashed in Immich** album with exactly the photos waiting to go,
 and a Shortcut can delete them without asking:
 
-1. Shortcuts > Automation > New > **Time of Day** (e.g. daily), **Run Immediately**.
-2. Actions: **Sync Immich deletions** (from this app) > **Find Photos** where Album is *Trashed in Immich*
-   > **Delete Photos**.
-3. In the Delete Photos action's details, turn on **Allow Deleting Without Confirmation**.
+1. Get the shortcut: [the author's own, ready to add](https://www.icloud.com/shortcuts/010a4f701ac0443d84168935df638217),
+   or build it: **Sync Immich deletions** (from this app) > **Find Photos** where Album is
+   *Trashed in Immich* > **Delete Photos**.
+2. Let Shortcuts delete without asking: iPhone **Settings > Apps > Shortcuts > Advanced > Allow Deleting
+   Without Confirmation**.
+3. Run it on a schedule: Shortcuts > Automation > New > **Time of Day** (e.g. daily) > **Run Immediately**,
+   and pick the shortcut.
 
 Deleted photos sit in Recently Deleted for 30 days, and photos restored in Immich drop out of the album
 before they can be deleted. Don't add photos to that album by hand.
