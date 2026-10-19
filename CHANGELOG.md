@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.1: install with SideStore
+
+- README: step-by-step install with a free Apple account, using the now public patched SideStore
+  (github.com/dddd-zdf/sidestore-extfix), which also signs the app's ExtensionKit extension.
+- The upload extension's required base URL (used by iOS for validation, not for uploads) is now the
+  project page instead of the author's server.
+- Who must act: the user updates (nothing changes in use).
+
 ## 0.10.0: sign in with your Immich account, no server setup
 
 - Includes 0.9.0 (not released on its own): every upload goes straight from the iPhone to Immich.

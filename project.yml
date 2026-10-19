@@ -11,7 +11,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.10.0"
+    MARKETING_VERSION: "0.10.1"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Manual
@@ -62,7 +62,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Apple requires this for "network access validation"; it is not the upload URL
         # (uploads go to the server set in the app, as with Nextcloud's cloud.nextcloud.com).
-        BackgroundUploadURLBase: https://photos.example.com
+        BackgroundUploadURLBase: https://github.com/dddd-zdf/background-sync-for-immich
         EXAppExtensionAttributes:
           EXExtensionPointIdentifier: com.apple.photos.background-upload
     settings:

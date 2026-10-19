@@ -24,28 +24,38 @@ called **BG Sync**.
 - iPhone on **iOS 27** or later.
 - Your own **Immich** server (tested with Immich v3.3), reachable over **HTTPS** from wherever your
   iPhone is (background uploads happen away from home too; an always-on VPN such as Tailscale works).
-- A way to sideload an IPA whose signer also signs its **ExtensionKit extension** (see below).
+- A computer once, to install SideStore (or another way to sideload that signs the app's extension; see below).
 
 ## 1. Install the app
 
-Download `BackgroundSync-<version>.ipa` from [Releases](../../releases) and sideload it your usual way.
-Updating over an existing install keeps your settings.
+The easiest way, with a free Apple account, is SideStore. The app's upload extension is an
+ExtensionKit extension, which official SideStore can't sign yet, so use the patched build
+[sidestore-extfix](https://github.com/dddd-zdf/sidestore-extfix) (SideStore with that one fix):
 
-**Your signer must handle the extension.** The upload extension is an ExtensionKit extension, which
-lives in the app's `Extensions/` folder (not the older `PlugIns/`), and it needs the same App Group as the
-app. Signers that only look in `PlugIns/` leave it unsigned and the install fails; as of October 2026 that
-includes official SideStore and iloader. Signing with your own certificate (a paid Apple developer
-account, with a tool that re-signs every nested bundle) should work, but the author hasn't tested it. A
-patched SideStore that signs it with a free account is in the works.
+1. **Install SideStore** following [SideStore's guide](https://docs.sidestore.io) (it needs a computer
+   once, e.g. with iloader). Skip this if you already have SideStore.
+2. **Swap in the patched SideStore:** download `SideStore-<version>.ipa` from
+   [sidestore-extfix releases](https://github.com/dddd-zdf/sidestore-extfix/releases) and open it in
+   SideStore (share it to SideStore, or + in My Apps). It replaces SideStore and keeps your apps.
+3. **Add this app's source** in SideStore (Sources > +):
 
-If your sideloading app reads AltStore/SideStore sources, add one for updates:
+   ```
+   https://github.com/dddd-zdf/background-sync-for-immich/releases/latest/download/source.json
+   ```
 
-| Channel | Source URL |
-|---|---|
-| Stable (tagged releases) | `https://github.com/dddd-zdf/background-sync-for-immich/releases/latest/download/source.json` |
-| Nightly (every app change on `main`, less tested) | `https://github.com/dddd-zdf/background-sync-for-immich/releases/download/nightly/source.json` |
+4. **Install Background Sync for Immich** from that source. SideStore keeps it signed (free accounts
+   need a refresh every 7 days, which SideStore does in the background) and shows updates.
 
-Both install the same app, so switching channels is an ordinary update that keeps your settings.
+If Apple sign-in in SideStore fails (error 80045/503), see the patched SideStore's README.
+
+Other ways: download `BackgroundSync-<version>.ipa` from [Releases](../../releases) and use any signer
+that also signs `Extensions/` (signers that only look in `PlugIns/`, like official SideStore and iloader
+as of October 2026, leave the extension unsigned and the install fails). With a paid Apple developer
+account, signing every nested bundle with your own certificate should work, but hasn't been tested.
+
+Less tested builds (every app change) are on the nightly source:
+`https://github.com/dddd-zdf/background-sync-for-immich/releases/download/nightly/source.json`.
+It's the same app, so switching is an ordinary update that keeps your settings.
 
 ## 2. Set it up
 
