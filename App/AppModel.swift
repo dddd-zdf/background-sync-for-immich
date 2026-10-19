@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
 
     var autoOn: Bool { Settings.autoSince != nil }
     var hasServer: Bool { !Settings.apiKey.isEmpty }
+    var keyRejected: Bool { Settings.keyRejected }
 
     /// Photos on the iPhone known to be in Immich (uploaded here or linked).
     var onImmich: Int {

@@ -7,6 +7,7 @@ struct ContentView: View {
     @ObservedObject private var model = AppModel.shared
     @ObservedObject private var sync = DeleteSync.shared
     @State private var message = ""
+    @State private var signInAgain = false
 
     var body: some View {
         NavigationStack {
@@ -100,6 +101,13 @@ struct ContentView: View {
                 if phase == .background { Task { await SharedLog.flush() } }
             }
             .onChange(of: sync.removalRequested) { _, _ in removeIfRequested() }
+            // First run: nothing works before the app is connected to Immich.
+            .fullScreenCover(isPresented: Binding(get: { !model.hasServer }, set: { _ in })) {
+                SetupView { model.refresh(); autoSync() }
+            }
+            .sheet(isPresented: $signInAgain) {
+                SetupView(onDone: { signInAgain = false; model.refresh() }, canCancel: true)
+            }
         }
     }
 
@@ -118,9 +126,9 @@ struct ContentView: View {
                 Button("Allow") { Task { await model.requestPhotosAccess() } }
             })
         }
-        if !model.hasServer {
-            list.append(Problem(id: "server", text: "Add your Immich server", icon: "server.rack") {
-                NavigationLink("Set up") { SettingsView() }
+        if model.hasServer && model.keyRejected {
+            list.append(Problem(id: "key", text: "Immich no longer accepts this app's key", icon: "key") {
+                Button("Sign in") { signInAgain = true }
             })
         }
         if model.photosStatus == .authorized && !model.extensionEnabled {

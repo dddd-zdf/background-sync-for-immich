@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.10.0: sign in with your Immich account, no server setup
+
+- Includes 0.9.0 (not released on its own): every upload goes straight from the iPhone to Immich.
+  Nothing to install on the server; the companion container and its reverse proxy route can be removed.
+- First launch is a short setup: server address, sign in (email and password, or the server's OAuth
+  button, using the same redirect as Immich's own app), then Photos access and background upload in one
+  tap. The app creates its own API key with only the permissions it needs, then ends the login session;
+  the password isn't kept. "Use an API key instead" is still there.
+- If Immich stops accepting the key (revoked or deleted), the home screen says so with a Sign in button.
+- Settings: the server section shows the server, Check connection, and Sign in again or change server.
+- CI: a manual run on a branch also publishes to the nightly source.
+- Who must act: the user updates from the nightly source (existing setups keep their key).
+
+## 0.9.0: no server setup
+
+- Every upload now goes straight from the iPhone to Immich (tested in 0.8 as an experiment: Live Photos,
+  edits, reverts, a 238 MB video). Nothing to install on the server: no container, no reverse proxy route.
+  The setting and the companion container are gone from the setup; server owners can remove
+  `background-sync-server` and its route.
+- Uploads left in flight by an older version are still finished and recorded.
+- Save and check only checks Immich and the API key.
+- "Send debug log to the server" stays as a developer option (needs the author's debug receiver).
+- Who must act: the user updates. Optional: remove the container and its reverse proxy route.
+
 ## 0.8.1 (nightly): faster uploads without the server container
 
 - Direct uploads: iOS only came back to the extension every 5-10 minutes, so a Live Photo or an edit

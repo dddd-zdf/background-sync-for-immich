@@ -4,14 +4,20 @@ Developer notes. For installing and using the app, see the [README](../README.md
 (Bundle IDs and target names keep the first name, Immich Backup.)
 
 ```
-iPhone: PhotoKit runs UploadExtension -> raw POST <server>/api/assets/background
-  -> reverse proxy -> background-sync-server (:2284) -> multipart POST /api/assets -> Immich
+iPhone: PhotoKit wakes UploadExtension on library changes
+  -> it writes Immich's multipart body to a file (Shared/DirectUpload.swift)
+  -> background URLSession: POST <server>/api/assets -> Immich
+  -> result saved by whichever process iOS hands it to (extension, or the app woken in the background)
+  -> extension records it and makes the follow-up calls (stacks, replacing an edit)
 ```
 
-- `App/`: SwiftUI host app (settings, enable the extension, status, log).
-- `UploadExtension/`: PhotoKit extension; queues upload jobs, records results.
-- `Shared/`: app group lookup, settings, log, upload state (both targets).
-- `proxy/`: Go service; PhotoKit can only send the raw file, Immich only takes multipart.
+Nothing runs on the server besides Immich. (Up to 0.8, PhotoKit upload jobs sent the raw file to a
+companion container that built the multipart request; PhotoKit can only send a resource's raw bytes.)
+
+- `App/`: SwiftUI host app (settings, enable the extension, status, log, delete sync).
+- `UploadExtension/`: PhotoKit extension; picks what to upload, queues transfers, records results.
+- `Shared/`: app group lookup, settings, log, upload state, `DirectUpload` (both targets).
+- `proxy/`: the old companion container, kept as the author's debug-log receiver (see below).
 - `project.yml`: XcodeGen spec. No Mac needed: CI (`xcode-27` runner) builds unsigned IPAs.
 
 ## Fixed identifiers (do not change)
@@ -28,7 +34,7 @@ Free Apple account: every new bundle ID costs an App ID (10 per week).
 
 Push to `main` (or run the "iOS build" workflow); the `ipa-N` artifact has
 `BackgroundSync-<version>.ipa`. Pushing a `v*` tag also attaches the IPA to a GitHub release and
-publishes the proxy image `ghcr.io/dddd-zdf/background-sync-for-immich-server`. Bump `MARKETING_VERSION` in
+publishes the debug receiver image `ghcr.io/dddd-zdf/background-sync-for-immich-server`. Bump `MARKETING_VERSION` in
 `project.yml` and add a CHANGELOG entry first.
 
 Tested on iOS 27 with a free Apple account and the patched SideStore 0.7.0-extfix.2: photos reach
@@ -43,8 +49,8 @@ Below is the default behaviour. Settings (`Shared/Settings.swift`) change it: `i
 `syncImmichDeletes` turn off a delete direction (deletes seen while off are marked gone);
 `bulkTrashLimit` replaces the fixed 25.
 
-- Each job uploads one file: the version you see in Photos (the edited render if any, named like the
-  original, e.g. `IMG_1234.jpg`). Up to 20 jobs at once; photos from the last day first, then newer
+- Each upload sends one file: the version you see in Photos (the edited render if any, named like the
+  original, e.g. `IMG_1234.jpg`). Up to 10 at once (each needs a temporary copy in the app group); photos from the last day first, then newer
   ones since upload was turned on, then older ones the library check marked as not in Immich. A file that fails 3 times waits for "Retry all".
 - Live Photos: two jobs in sequence. The video goes first; once its job is acknowledged with an
   Immich ID, the still goes with `X-Live-Photo-Video-Id`, which Immich uses to pair them.
@@ -93,10 +99,18 @@ edit replace (which trashes the old Immich asset) never deletes the iPhone photo
 
 - iOS calls `processJobs()` when it's enabled, on photo library changes, and again while we return
   `.processing`. After `.completed` it waits for the next library change, so the app's test button
-  re-enables the extension to get an immediate run.
+  re-enables the extension to get an immediate run. Right after an app update iOS often waits ~5
+  minutes before the first run.
+- Finished URLSession transfers don't make iOS call the extension again soon (5-10 minutes, sometimes
+  30), so each run waits up to 25 s for its own transfers and sends the next part (a Live Photo's
+  still, an edit's render) in the same run.
+- Only one process may hold a background session (else NSURLErrorDomain -996): each extension
+  instance makes its own (`direct-upload.<uuid>`); the app, woken via
+  `handleEventsForBackgroundURLSession`, connects only to collect results and then invalidates it.
+  The extension's stale session then reports -997 for those tasks, which is ignored.
 - iOS may call `willTerminate()` and then reuse the same instance; the stop flag is reset per run.
-- Debug with the app's Log screen (extension and app write to `log.txt` in the app group) and
-  the proxy's container log (`docker logs background-sync-server`).
+- Debug with the app's Log screen (extension and app write to `log.txt` in the app group). With
+  Advanced > "Send debug log to the server" on, lines also go to the debug receiver (below).
 
 ## SideStore and ExtensionKit
 
@@ -116,25 +130,14 @@ list with those servers), pick Jkcoxson, then User Customizations >
 Anisette Client Configuration > Fetch > Save as Overrides, reset adi.pb, sign in with
 trusted-device 2FA.
 
-## Proxy
+## Debug receiver (`proxy/`)
 
-Runs next to Immich (see the README for compose and reverse proxy setup). Env: `LISTEN_ADDR`
-(default `127.0.0.1:2284`), `IMMICH_URL` (default `http://127.0.0.1:2283`). `GET /health` answers `ok`.
-It keeps no state and stores no keys: each request carries the user's own `x-api-key`.
-
-- `OPTIONS` -> 501 (tells PhotoKit: no resumable uploads, send one plain request).
-- Request headers: `x-api-key`, `X-Filename` (percent-encoded), `X-Content-Type`,
-  `X-File-Created-At`, `X-File-Modified-At`, `X-Is-Favorite`, `X-Duration-Ms`, `X-Live-Photo-Video-Id`,
-  `X-Replace-Asset-Id` (after a successful upload with a different ID: `PUT /api/assets/copy`, then
-  `DELETE /api/assets` to trash the old one), `X-Stack-Original-Id` (stack the upload on top of that
-  original; with it, `X-Replace-Asset-Id` is what stood for the photo before, trashed unless it is
-  the original). Others (`X-Asset-Id`, `X-Upload-Part`, ...) are only
-  for the extension, which reads them back from the finished job.
-- Response headers (PhotoKit keeps only headers): `X-Immich-Asset-Id`, `X-Immich-Status`,
-  `X-Immich-Result` (created/duplicate), `X-Immich-Error`, `X-Immich-Replaced` and `X-Immich-Stacked` (ok or what failed).
-
-Images: `ghcr.io/dddd-zdf/background-sync-for-immich-server`, built by the Proxy workflow (`:latest` on
-a manual run, plus `:<tag>` on a `v*` tag). The author's server runs it as in docs/SERVER.md.
+The author's server runs the old companion container (`ghcr.io/dddd-zdf/background-sync-for-immich-server`,
+built by the Proxy workflow) only for this: the app's optional debug log is POSTed to
+`<server>/api/assets/background` with `X-Debug-Log: 1`; the container checks the API key against
+Immich (`GET /api/users/me`, cached an hour) and prints each line, so `docker logs` shows what the
+phone did. A daily check on that log alerts the author (infra repo, `bgsync-check`). It still accepts
+the old raw uploads from app versions up to 0.8. Not needed by anyone else.
 
 ### Immich upgrades
 
@@ -142,8 +145,9 @@ The coupling to Immich is `POST /api/assets` (multipart fields `assetData`, `fil
 `fileModifiedAt`, `filename`, `isFavorite`, `duration`, `livePhotoVideoId`), `PUT /api/assets/copy`
 (with `stack`/`favorite` flags), `DELETE /api/assets`, and stacks (`POST /api/stacks` with the shown
 asset first, `GET /api/stacks?primaryAssetId=`, `DELETE /api/stacks/{id}`), checked against v3.3.3.
-Before bumping `IMMICH_VERSION`, check that DTO in the release. If Immich merges resumable uploads
-(immich-app/immich#22385), PhotoKit could upload to Immich directly and the proxy can go.
+Before bumping `IMMICH_VERSION`, check that DTO in the release. All of it is called from the iPhone
+(`DirectUpload`, `UploadExtension.followUp`, `App/Immich.swift`). If Immich merges resumable uploads
+(immich-app/immich#22385), PhotoKit's own jobs could upload directly, without the multipart copy.
 
 ## References
 

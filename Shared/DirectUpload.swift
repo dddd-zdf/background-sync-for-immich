@@ -1,7 +1,7 @@
 import Foundation
 import Photos
 
-/// Experimental upload path without the companion container (Settings.directUpload).
+/// How every file gets to Immich (since 0.9; before that, PhotoKit jobs went through a companion container).
 ///
 /// PhotoKit's upload jobs can only send a resource's raw bytes, which Immich doesn't accept, so here
 /// the extension writes Immich's multipart body to a file in the app group itself and hands it to a
@@ -37,7 +37,7 @@ enum DirectUpload {
 
     // MARK: - Sending
 
-    /// Writes the body for `request` (headers as for the container, see proxy/main.go `uploadFields`)
+    /// Writes the body for `request` (the multipart fields Immich expects, from the request headers)
     /// and starts the transfer to `POST /api/assets`. Returns the `inflight` key.
     static func queue(_ request: URLRequest, resource: PHAssetResource, session: URLSession) async throws -> String {
         guard let base = URL(string: Settings.serverURL), let directory else { throw failure("no server URL or app group") }

@@ -79,7 +79,8 @@ jobs:
       # Nightly channel: every build of main replaces the IPA and source.json on the "nightly"
       # prerelease (.../releases/download/nightly/source.json). Prereleases never count as "latest".
       - name: Nightly
-        if: github.ref == 'refs/heads/main'
+        # main, or a manual run on another branch to try it out before merging
+        if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/'))
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_NUMBER: ${{ github.run_number }}

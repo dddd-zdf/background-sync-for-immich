@@ -1,10 +1,10 @@
 # Background Sync for Immich
 
 Two-way sync between your iPhone's Photos library and your own [Immich](https://immich.app) server,
-running in the background even when the app is closed.
+running in the background even when the app is closed. Nothing to install on the server.
 
-- **New photos upload on their own**, usually within a couple of minutes, using the iOS 27 PhotoKit
-  background upload extension. iOS runs it whether or not the app is open, even after a force-quit.
+- **New photos upload on their own**, usually within minutes, using the iOS 27 PhotoKit background
+  upload extension. iOS runs it whether or not the app is open, even after a force-quit.
 - **Edits sync.** Edit a photo in Photos and Immich gets the new version, with the untouched original
   stacked under it (or just the latest edit, your choice). Revert in Photos and Immich reverts too.
 - **Deletes sync both ways.** Delete on the iPhone and it goes to Immich's trash. Trash it in Immich
@@ -17,63 +17,16 @@ called **BG Sync**.
 
 > An independent community project, not affiliated with or endorsed by Immich or FUTO.
 
-> **Status:** works daily for the author. It is a sideloaded app (not on the App Store) and
-> needs one small extra container on your Immich server. Read the requirements before you start.
-
-## Set up with an AI agent
-
-If you use an AI agent that can run commands on your server (Claude Code, Codex, etc.), it can do the
-server side for you. Tell it:
-
-> Set up Background Sync for Immich on my server by following
-> https://github.com/dddd-zdf/background-sync-for-immich/blob/main/docs/AGENT_SETUP.md
-
-It adds the container and the route, checks them, and tells you the few steps left on your iPhone.
-Prefer doing it yourself? Read on.
+> **Status:** works daily for the author. It is a sideloaded app (not on the App Store).
 
 ## Requirements
 
 - iPhone on **iOS 27** or later.
-- Your own **Immich** server (tested with Immich v3.3).
-- Access to your Immich server to add one small Docker container and one reverse proxy route
-  (below). Immich must be reachable over HTTPS from wherever your iPhone is.
+- Your own **Immich** server (tested with Immich v3.3), reachable over **HTTPS** from wherever your
+  iPhone is (background uploads happen away from home too; an always-on VPN such as Tailscale works).
 - A way to sideload an IPA whose signer also signs its **ExtensionKit extension** (see below).
 
-## 1. Add the companion container to your server
-
-iOS's background upload can only send a plain file, and Immich only takes form uploads, so a small
-container next to Immich (`background-sync-server`) converts between the two. It runs on your server, stores
-nothing and uses your own API key. About 5 minutes if you run Immich with Docker Compose:
-
-1. Add the service to Immich's `docker-compose.yml` and `docker compose up -d`:
-
-   ```yaml
-     background-sync-server:
-       container_name: background-sync-server
-       image: ghcr.io/dddd-zdf/background-sync-for-immich-server:latest
-       restart: always
-       environment:
-         LISTEN_ADDR: 0.0.0.0:2284
-         IMMICH_URL: http://immich-server:2283
-       ports:
-         - 127.0.0.1:2284:2284
-   ```
-
-2. In your reverse proxy, send the one path `/api/assets/background` to it. Caddy:
-
-   ```
-   photos.example.com {
-       reverse_proxy /api/assets/background 127.0.0.1:2284
-       reverse_proxy 127.0.0.1:2283
-   }
-   ```
-
-3. Check from outside: `curl -i -X OPTIONS https://photos.example.com/api/assets/background` answers `501`.
-
-**nginx, Nginx Proxy Manager, Traefik, Tailscale Serve, Cloudflare Tunnel, and troubleshooting:
-[docs/SERVER.md](docs/SERVER.md).**
-
-## 2. Install the app
+## 1. Install the app
 
 Download `BackgroundSync-<version>.ipa` from [Releases](../../releases) and sideload it your usual way.
 Updating over an existing install keeps your settings.
@@ -82,8 +35,8 @@ Updating over an existing install keeps your settings.
 lives in the app's `Extensions/` folder (not the older `PlugIns/`), and it needs the same App Group as the
 app. Signers that only look in `PlugIns/` leave it unsigned and the install fails; as of October 2026 that
 includes official SideStore and iloader. Signing with your own certificate (a paid Apple developer
-account, with a tool that re-signs every nested bundle) should work, but the author hasn't tested it. A patched SideStore that signs it with a free
-account is in the works.
+account, with a tool that re-signs every nested bundle) should work, but the author hasn't tested it. A
+patched SideStore that signs it with a free account is in the works.
 
 If your sideloading app reads AltStore/SideStore sources, add one for updates:
 
@@ -94,23 +47,23 @@ If your sideloading app reads AltStore/SideStore sources, add one for updates:
 
 Both install the same app, so switching channels is an ordinary update that keeps your settings.
 
-## 3. Set it up
+## 2. Set it up
 
-1. In Immich: **Account settings > API keys > New API key** with these permissions:
-   `asset.upload`, `asset.read`, `asset.copy`, `asset.delete`, `user.read`,
-   `stack.create`, `stack.read`, `stack.delete`.
-2. In the app: **Settings > Immich server**: your server URL (e.g. `https://photos.example.com`) and
-   the key, then **Save and check**.
-3. Allow **full Photos access** and turn on **Background upload**.
-4. Turn on **Upload new photos**.
+Open the app. It asks for your Immich server's address, then you sign in with your Immich account
+(email and password, or your server's OAuth button). The app creates its own API key with only the
+permissions it needs; you can see or remove it in Immich under **Account settings > API keys**. Your
+password goes only to your server and isn't kept. Prefer making a key yourself? Choose **Use an API
+key instead**.
 
-The app then matches your library with what's already in Immich and uploads whatever is missing.
+Then tap **Allow access and start** and choose **Allow Full Access** to Photos. That's it: the app
+matches your library with what's already in Immich and uploads whatever is missing, from then on in
+the background.
 
 ## Settings
 
 | Setting | What it does | Default |
 |---|---|---|
-| Upload new photos | Background upload on/off | off until you turn it on |
+| Upload new photos | Background upload on/off | on after setup |
 | Wi-Fi only | No uploads over cellular | off |
 | Videos / Screenshots | Upload these too | on / on |
 | Older photos | Also upload photos from before you turned upload on that Immich doesn't have | on |
@@ -148,9 +101,11 @@ the extension for new photos, not for deletions).
 
 - **Deletes go to trash on both sides**, never straight to permanent deletion.
 - The **upload extension decides its own schedule**; iOS usually runs it within minutes of a new photo.
-  Large backlogs take a while: up to 20 uploads run at once.
+  Large backlogs take a while: up to 10 uploads run at once.
 - **Troubleshooting:** Settings > Advanced has a test upload, the extension's run count and a log you
-  can share. Server-side problems: [docs/SERVER.md](docs/SERVER.md#troubleshooting).
+  can share. Failed uploads show on the home screen with the reason.
+- Each upload briefly needs free space on the iPhone for a copy of the file (it's built into Immich's
+  upload format on the phone, then sent).
 - **Albums** are not synced (Immich albums and iPhone albums stay separate). Favorites are set on upload.
 - Works over a VPN (e.g. Tailscale) as long as the iPhone can reach the server when iOS runs the upload.
 
@@ -160,7 +115,7 @@ Bugs and ideas: open an issue.
 
 ## For developers
 
-How it works inside (edit detection, Live Photo pairing, the proxy's headers, building without a Mac):
+How it works inside (edit detection, Live Photo pairing, uploads straight to Immich, building without a Mac):
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Changes per version: [CHANGELOG.md](CHANGELOG.md).
 
 ## License

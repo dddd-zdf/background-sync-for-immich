@@ -58,8 +58,8 @@ source = {
         "localizedDescription": (
             "Keeps your iPhone's Photos library and your own Immich server in sync, in the background: "
             "new photos upload on their own, edits sync, and deletes go both ways (each direction can be "
-            "turned off). Needs iOS 27, the patched SideStore that can sign its extension, and a small "
-            f"proxy next to Immich. Setup: https://github.com/{repo}#readme"
+            "turned off). Needs iOS 27 and a sideloader that signs its extension; nothing to install on the "
+            f"server. Setup: https://github.com/{repo}#readme"
         ),
         "iconURL": f"{raw}/App/Assets.xcassets/AppIcon.appiconset/icon.png",
         "tintColor": "#4250AF",
