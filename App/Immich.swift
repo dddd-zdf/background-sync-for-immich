@@ -70,6 +70,7 @@ enum Immich {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 { Settings.keyRejected = true }
         guard (200..<300).contains(code) else {
             let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"]
             throw Failure(message: "Immich \(method) \(path): HTTP \(code) \(message.map { "\($0)" } ?? "")")

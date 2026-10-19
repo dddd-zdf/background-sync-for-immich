@@ -40,6 +40,12 @@ enum Settings {
         set { d.set(newValue, forKey: "wifiOnly") }
     }
 
+    /// Immich answered 401 to the saved key (revoked or deleted): the app asks to sign in again.
+    static var keyRejected: Bool {
+        get { d.bool(forKey: "keyRejected") }
+        set { d.set(newValue, forKey: "keyRejected") }
+    }
+
     /// Upload videos (a Live Photo's video always goes with its photo).
     static var includeVideos: Bool {
         get { d.object(forKey: "includeVideos") as? Bool ?? true }

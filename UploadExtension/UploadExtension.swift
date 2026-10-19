@@ -141,6 +141,7 @@ final class UploadExtension: PHBackgroundResourceUploadJobExtension {
         let file = sent.value(forHTTPHeaderField: Header.filename)?.removingPercentEncoding ?? "?"
         let immichID = headers["x-immich-asset-id"] ?? ""
         let status = headers["x-immich-status"] ?? "-"
+        if status == "401" { Settings.keyRejected = true }  // the app asks to sign in again
         let result = headers["x-immich-result"] ?? ""
         let replaced = (headers["x-immich-replaced"].map { " replaced: \($0)" } ?? "")
             + (headers["x-immich-stacked"].map { " stacked: \($0)" } ?? "")

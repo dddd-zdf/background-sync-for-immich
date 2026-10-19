@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0 (nightly): sign in with your Immich account
+
+- First launch is a short setup: server address, sign in (email and password, or the server's OAuth
+  button, using the same redirect as Immich's own app), then Photos access and background upload in one
+  tap. The app creates its own API key with only the permissions it needs, then ends the login session;
+  the password isn't kept. "Use an API key instead" is still there.
+- If Immich stops accepting the key (revoked or deleted), the home screen says so with a Sign in button.
+- Settings: the server section shows the server, Check connection, and Sign in again or change server.
+- CI: a manual run on a branch also publishes to the nightly source.
+- Who must act: the user updates from the nightly source (existing setups keep their key).
+
 ## 0.9.0: no server setup
 
 - Every upload now goes straight from the iPhone to Immich (tested in 0.8 as an experiment: Live Photos,

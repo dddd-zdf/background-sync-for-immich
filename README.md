@@ -49,21 +49,21 @@ Both install the same app, so switching channels is an ordinary update that keep
 
 ## 2. Set it up
 
-1. In Immich: **Account settings > API keys > New API key** with these permissions:
-   `asset.upload`, `asset.read`, `asset.copy`, `asset.delete`, `user.read`,
-   `stack.create`, `stack.read`, `stack.delete`.
-2. In the app: **Settings > Immich server**: your server URL (e.g. `https://photos.example.com`) and
-   the key, then **Save and check**.
-3. Allow **full Photos access** and turn on **Background upload**.
-4. Turn on **Upload new photos**.
+Open the app. It asks for your Immich server's address, then you sign in with your Immich account
+(email and password, or your server's OAuth button). The app creates its own API key with only the
+permissions it needs; you can see or remove it in Immich under **Account settings > API keys**. Your
+password goes only to your server and isn't kept. Prefer making a key yourself? Choose **Use an API
+key instead**.
 
-The app then matches your library with what's already in Immich and uploads whatever is missing.
+Then tap **Allow access and start** and choose **Allow Full Access** to Photos. That's it: the app
+matches your library with what's already in Immich and uploads whatever is missing, from then on in
+the background.
 
 ## Settings
 
 | Setting | What it does | Default |
 |---|---|---|
-| Upload new photos | Background upload on/off | off until you turn it on |
+| Upload new photos | Background upload on/off | on after setup |
 | Wi-Fi only | No uploads over cellular | off |
 | Videos / Screenshots | Upload these too | on / on |
 | Older photos | Also upload photos from before you turned upload on that Immich doesn't have | on |

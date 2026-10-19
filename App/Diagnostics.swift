@@ -62,6 +62,7 @@ enum Diagnostics {
         do {
             let (data, response) = try await URLSession.shared.data(for: me)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if code == 200 { Settings.keyRejected = false }
             let name = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["name"] as? String
             lines.append(code == 200 ? "Immich: signed in as \(name ?? "?")" : "Immich: HTTP \(code)")
         } catch {

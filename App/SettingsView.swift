@@ -4,8 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject private var model = AppModel.shared
     @ObservedObject private var sync = DeleteSync.shared
-    @State private var serverURL = Settings.serverURL
-    @State private var apiKey = Settings.apiKey
+    @State private var signIn = false
     @State private var serverCheck = ""
     @State private var checking = false
     @State private var autoOn = Settings.autoSince != nil
@@ -153,23 +152,23 @@ struct SettingsView: View {
             }
 
             Section {
-                TextField("https://photos.example.com", text: $serverURL)
-                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                SecureField("API key", text: $apiKey)
+                LabeledContent("Server", value: Settings.serverURL)
                 Button {
-                    Task { await saveAndCheck() }
+                    Task { await check() }
                 } label: {
                     HStack {
-                        Text("Save and check")
+                        Text("Check connection")
                         Spacer()
                         if checking { ProgressView() }
                     }
                 }
                 if !serverCheck.isEmpty { Text(serverCheck).font(.footnote).foregroundStyle(.secondary) }
+                Button("Sign in again or change server") { signIn = true }
             } header: {
                 Text("Immich server")
-            } footer: {
-                Text("API key permissions: \(Diagnostics.requiredPermissions.joined(separator: ", ")).")
+            }
+            .sheet(isPresented: $signIn) {
+                SetupView(onDone: { signIn = false; serverCheck = ""; model.refresh() }, canCancel: true)
             }
 
             Section("Permissions") {
@@ -212,10 +211,7 @@ struct SettingsView: View {
             }))
     }
 
-    private func saveAndCheck() async {
-        Settings.serverURL = serverURL
-        serverURL = Settings.serverURL  // shows the cleaned-up form
-        Settings.apiKey = apiKey
+    private func check() async {
         checking = true
         serverCheck = await Diagnostics.checkServer()
         checking = false
