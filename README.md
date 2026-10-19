@@ -17,6 +17,10 @@ called **BG Sync**.
 
 > An independent community project, not affiliated with or endorsed by Immich or FUTO.
 
+> **Vibe-coded:** this app was written largely with an AI coding assistant. It's tested live on the
+> author's own iPhone and Immich server, but use it at your own risk, and keep your own backups: it can
+> delete photos (on the iPhone and in Immich) when delete sync is on.
+
 > **Status:** works daily for the author. It is a sideloaded app (not on the App Store).
 
 ## Requirements
@@ -122,11 +126,6 @@ the extension for new photos, not for deletions).
 ## Support
 
 Bugs and ideas: open an issue.
-
-If this saves you time, you can [leave a tip on Ko-fi](https://ko-fi.com/dfzhhh). If tips ever cover Apple's
-developer fee ($99 USD a year), I'll look at putting the app on TestFlight or the App Store so nobody has
-to sideload. No promises either way. Tips go to this app's developer, not to Immich; to support Immich
-itself, [buy a product key](https://buy.immich.app).
 
 ## For developers
 
