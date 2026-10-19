@@ -123,6 +123,11 @@ the extension for new photos, not for deletions).
 
 Bugs and ideas: open an issue.
 
+If this saves you time, you can [leave a tip on Ko-fi](https://ko-fi.com/dfzhhh). If tips ever cover Apple's
+developer fee ($99 USD a year), I'll look at putting the app on TestFlight or the App Store so nobody has
+to sideload. No promises either way. Tips go to this app's developer, not to Immich; to support Immich
+itself, [buy a product key](https://buy.immich.app).
+
 ## For developers
 
 How it works inside (edit detection, Live Photo pairing, uploads straight to Immich, building without a Mac):
