@@ -1,7 +1,9 @@
 # Changelog
 
-## 0.10.0 (nightly): sign in with your Immich account
+## 0.10.0: sign in with your Immich account, no server setup
 
+- Includes 0.9.0 (not released on its own): every upload goes straight from the iPhone to Immich.
+  Nothing to install on the server; the companion container and its reverse proxy route can be removed.
 - First launch is a short setup: server address, sign in (email and password, or the server's OAuth
   button, using the same redirect as Immich's own app), then Photos access and background upload in one
   tap. The app creates its own API key with only the permissions it needs, then ends the login session;
